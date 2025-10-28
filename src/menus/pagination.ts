@@ -2,6 +2,7 @@ import { Logger } from "commandkit"
 import {
   ActionRowBuilder,
   type APIComponentInContainer,
+  APIContainerComponent,
   ButtonBuilder,
   type ButtonInteraction,
   ContainerBuilder,
@@ -16,10 +17,11 @@ import type {
   MenuData,
   MenuItem,
   MenuParams,
+  MenuPluginOptions,
   PageNavigationType,
-  PaginationMenuDefinition,
-  PaginationPluginOptions
+  PaginationMenuDefinition
 } from "../types"
+import { transformComponentCustomId } from "../utils"
 import { BaseMenu } from "./base"
 
 export interface PaginationRenderOptions {
@@ -78,12 +80,12 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
    * Build a specific page without caching
    */
   private async buildPage(pageNumber: number): Promise<ContainerBuilder> {
-    const comps: ContainerComponentBuilder[] = []
+    const comps: APIComponentInContainer[] = []
 
     // Add title if defined
     const title = await this.renderTitle()
     if (title) {
-      comps.push(title)
+      comps.push(...title)
     }
 
     // Render page items
@@ -105,7 +107,24 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
         pageNumber,
         ctx
       )
-      comps.push(itemComponent)
+      const itemComponentHandled = this.handleComponentOrFragment(itemComponent)
+      console.log("ITEM COMPONENT: ", itemComponentHandled)
+
+      // Transform custom_ids for THIS SPECIFIC ITEM (with its index)
+      const transformedComponents = itemComponentHandled.map(comp => {
+        // Transform with the item's global index
+        const config = getPluginConfig()
+        return transformComponentCustomId(
+          comp,
+          config.actionPrefix,
+          this.sessionId,
+          new Set(this.actions.keys()),
+          globalIndex // ✅ Pass the specific item's index
+        )
+      })
+
+      console.log("TRANSFORMED COMPONENT: ", transformedComponents)
+      comps.push(...transformedComponents)
     }
 
     // Add navigation controls
@@ -114,11 +133,14 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
       comps.push(...navigation)
     }
 
-    // @ts-expect-error APIComponentInContainer
-    const components: APIComponentInContainer[] = comps.map(c => c.toJSON())
+    // const components: APIComponentInContainer[] = comps.map(c => c.toJSON())
+    // const itemIds = findAllCustomIds(components)
+    // console.log("IDS: ", itemIds)
+    // console.log(components)
+    // console.log("------------------")
 
     const builder = new ContainerBuilder({
-      components
+      components: comps
     })
 
     if (this.colorResolved) {
@@ -128,9 +150,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
     return builder
   }
 
-  private renderNavigationControls(
-    pageNumber: number
-  ): ContainerComponentBuilder[] | null {
+  private renderNavigationControls(pageNumber: number) {
     if (this.pageCount <= 1) {
       return null
     }
@@ -151,11 +171,11 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
       this.buildNavigationSelectMenu(pageNumber)
     )
 
-    return [row1, row2]
+    return [row1.toJSON(), row2.toJSON()] as APIComponentInContainer[]
   }
 
   private buildNavigationButton(
-    config: PaginationPluginOptions,
+    config: MenuPluginOptions,
     action: PageNavigationType,
     disabled: boolean
   ): ButtonBuilder {
@@ -381,7 +401,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
 
       case "goto":
         if (data && typeof data === "string") {
-          const pageIndex = parseInt(data)
+          const pageIndex = parseInt(data, 10)
           if (!isNaN(pageIndex)) {
             return this.goToPage(pageIndex)
           }

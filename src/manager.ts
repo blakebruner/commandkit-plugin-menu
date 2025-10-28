@@ -124,7 +124,7 @@ export class MenuManager {
 
       // Set items per page if provided
       if (itemsPerPage && "definition" in menu) {
-        (menu as any).definition.perPage = itemsPerPage
+        ;(menu as any).definition.perPage = itemsPerPage
       }
     } else {
       // menu = new SinglePageMenu(definition, sessionId, params)
@@ -214,6 +214,12 @@ export class MenuManager {
     return this.menus.has(menuName)
   }
 
+  public getMenu<Data extends MenuData>(
+    menuName: string
+  ): BaseMenu<Data> | undefined {
+    return this.menus.get(menuName)
+  }
+
   /**
    * Get all registered menu names
    */
@@ -226,7 +232,7 @@ export class MenuManager {
     this.sessionTimers.set(sessionId, timer)
   }
 
-  private generateSessionId(): string {
+  public generateSessionId(): string {
     return `menu_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 }

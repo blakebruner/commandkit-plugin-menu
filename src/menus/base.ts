@@ -1,4 +1,5 @@
 import {
+  type APIComponentInContainer,
   type ButtonInteraction,
   type ContainerBuilder,
   type ContainerComponentBuilder,
@@ -8,7 +9,9 @@ import {
 } from "discord.js"
 import { getPluginConfig } from "../plugin"
 import type {
+  ActionHandler,
   BaseMenuDefinition,
+  ContainerComponentOrFragment,
   MenuData,
   MenuParams,
   MenuSession,
@@ -27,6 +30,9 @@ export abstract class BaseMenu<Data extends MenuData> {
   protected viewers = new Set<string>() // User IDs who can view/interact
   protected creatorId: string // User who created the session
 
+  // Action registry
+  protected actions = new Map<string, ActionHandler<Data>>()
+
   constructor(
     definition: BaseMenuDefinition<Data>,
     sessionId: string,
@@ -38,6 +44,13 @@ export abstract class BaseMenu<Data extends MenuData> {
     this.params = params
     this.creatorId = creatorId
     this.viewers.add(creatorId)
+
+    if (definition.actions) {
+      // Register actions from definition
+      for (const [actionName, handler] of Object.entries(definition.actions)) {
+        this.actions.set(actionName, handler)
+      }
+    }
   }
 
   /**
@@ -143,17 +156,42 @@ export abstract class BaseMenu<Data extends MenuData> {
     }
   }
 
-  protected async renderTitle(): Promise<ContainerComponentBuilder | null> {
+  protected async renderTitle(): Promise<APIComponentInContainer[] | null> {
     if (this.definition.renderTitle) {
       const ctx = this.createSessionContext()
-      return await this.definition.renderTitle(ctx)
+      const title = await this.definition.renderTitle(ctx)
+
+      return this.handleComponentOrFragment(title)
     }
     return null
+  }
+
+  protected handleComponentOrFragment(
+    component: ContainerComponentOrFragment
+  ): APIComponentInContainer[] {
+    if (Array.isArray(component)) {
+      return component.flat().map(c => c.toJSON()) as APIComponentInContainer[]
+    } else {
+      return [component.toJSON()] as APIComponentInContainer[]
+    }
   }
 
   protected createActionId(action: string): string {
     const pluginConfig = getPluginConfig()
     return `${pluginConfig.actionPrefix}:${action}:${this.sessionId}`
+  }
+
+  /**
+   * Hijack a component's custom ID to add session info
+   */
+  protected hijackComponentId(component: any, actionName: string): any {
+    const customId = this.createActionId(actionName)
+
+    if ("setCustomId" in component) {
+      return component.setCustomId(customId)
+    }
+
+    return component
   }
 
   // Session management

@@ -1,9 +1,9 @@
 import { ButtonStyle } from "discord.js"
-import type { PaginationPluginOptions } from "./types"
+import type { MenuPluginOptions } from "./types"
 
 export const MAX_SELECT_OPTIONS = 25
 
-export const PLUGIN_DEFAULTS: PaginationPluginOptions = {
+export const PLUGIN_DEFAULTS: MenuPluginOptions = {
   actionPrefix: "page",
   preloadAll: false,
   navigation: {

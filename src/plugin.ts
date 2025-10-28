@@ -12,18 +12,18 @@ import {
 import { Events, type Interaction } from "discord.js"
 import { PLUGIN_DEFAULTS } from "./constants"
 import { menuManager } from "./manager"
-import type { PaginationPluginOptions } from "./types"
+import type { MenuPluginOptions } from "./types"
 
-let pluginConfig: PaginationPluginOptions = PLUGIN_DEFAULTS
+let pluginConfig: MenuPluginOptions = PLUGIN_DEFAULTS
 
-export function getPluginConfig(): PaginationPluginOptions {
+export function getPluginConfig(): MenuPluginOptions {
   return pluginConfig
 }
 
-export class PaginationPlugin extends RuntimePlugin<PaginationPluginOptions> {
-  public readonly name = "PaginationPlugin"
+export class MenuPlugin extends RuntimePlugin<MenuPluginOptions> {
+  public readonly name = "MenuPlugin"
 
-  public constructor(options: PaginationPluginOptions) {
+  public constructor(options: MenuPluginOptions) {
     super(options)
     pluginConfig = options
   }
@@ -60,7 +60,7 @@ export class PaginationPlugin extends RuntimePlugin<PaginationPluginOptions> {
       menuManager.register(page)
     }
 
-    Logger.info("PaginationPlugin activated")
+    Logger.info(`${this.name} activated`)
   }
 
   public async willEmitEvent(
@@ -103,6 +103,6 @@ export class PaginationPlugin extends RuntimePlugin<PaginationPluginOptions> {
   }
 
   private getPageDirectory(): string {
-    return path.join(getCurrentDirectory(), "app", "pages")
+    return path.join(getCurrentDirectory(), "app", "menus")
   }
 }

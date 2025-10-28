@@ -2,7 +2,8 @@ import type CommandKit from "commandkit"
 import type {
   ButtonStyle,
   ColorResolvable,
-  ContainerComponentBuilder
+  ContainerComponentBuilder,
+  MessageComponentInteraction
 } from "discord.js"
 
 export type ButtonWithCustomId =
@@ -10,6 +11,10 @@ export type ButtonWithCustomId =
   | ButtonStyle.Primary
   | ButtonStyle.Secondary
   | ButtonStyle.Success
+
+export type ContainerComponentOrFragment =
+  | ContainerComponentBuilder
+  | ContainerComponentBuilder[]
 
 export interface PageNavigationButtonOptions {
   label?: string
@@ -26,14 +31,14 @@ export interface PageNavigation {
 
 export type PageNavigationType = keyof PageNavigation
 
-export interface PaginationPluginOptions {
+export interface MenuPluginOptions {
   actionPrefix: string
   preloadAll: boolean
   navigation: PageNavigation
 }
 
 /** What callers can pass: everything optional, deep */
-export type PaginationPluginUserOptions = PartialDeep<PaginationPluginOptions>
+export type MenuPluginUserOptions = PartialDeep<MenuPluginOptions>
 
 /** Minimal context given to a page when it's built */
 export interface BaseBuildCtx {
@@ -56,6 +61,30 @@ export interface SessionContext<Data extends MenuData> {
   params: MenuParams<Data>
   sessionId: string
   sessionData: MenuSession<Data>
+}
+
+export type ActionHandler<Data extends MenuData> = (
+  ctx: ActionContext<Data>
+) => Promise<void>
+
+export interface ActionContext<Data extends MenuData> {
+  /** The interaction that triggered this action */
+  interaction: MessageComponentInteraction // Discord interaction
+
+  /** Menu session data */
+  sessionData: MenuSession<Data>
+
+  /** Menu parameters */
+  params: MenuParams<Data>
+
+  /** Item at the selected index */
+  item?: MenuItem<Data>
+
+  /** Session ID */
+  sessionId: string
+
+  /** User who triggered the action */
+  userId: string
 }
 
 export interface BaseMenuDefinition<Data extends MenuData> {
@@ -98,7 +127,13 @@ export interface BaseMenuDefinition<Data extends MenuData> {
   /** Render the menu title */
   renderTitle?: (
     ctx: SessionContext<Data>
-  ) => Promise<ContainerComponentBuilder> | ContainerComponentBuilder
+  ) => Promise<ContainerComponentOrFragment> | ContainerComponentOrFragment
+
+  /**
+   * Define custom actions for this menu
+   * Action names should be simple strings (e.g., 'delete', 'favorite', 'edit')
+   */
+  actions?: Record<string, ActionHandler<Data>>
 }
 
 export interface SinglePageMenuDefinition<Data extends MenuData>
@@ -109,7 +144,7 @@ export interface SinglePageMenuDefinition<Data extends MenuData>
   renderBody: (
     item: MenuItem<Data>,
     ctx: SessionContext<Data>
-  ) => Promise<ContainerComponentBuilder> | ContainerComponentBuilder
+  ) => Promise<ContainerComponentOrFragment> | ContainerComponentOrFragment
 }
 
 export interface PaginationMenuDefinition<Data extends MenuData>
@@ -126,7 +161,7 @@ export interface PaginationMenuDefinition<Data extends MenuData>
     index: number,
     pageIndex: number,
     ctx: SessionContext<Data>
-  ) => Promise<ContainerComponentBuilder> | ContainerComponentBuilder
+  ) => Promise<ContainerComponentOrFragment> | ContainerComponentOrFragment
 }
 
 export type MenuDefinition<Data extends MenuData> =

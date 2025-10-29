@@ -37,6 +37,9 @@ export type ContainerComponentOrFragment =
  * Base definition for all menu types
  */
 export interface BaseMenuDefinition<Data extends MenuData> {
+  /** Type of menu that this is */
+  type: "single" | "pagination"
+
   /** Unique name for this menu type */
   name: string
 
@@ -74,6 +77,9 @@ export interface BaseMenuDefinition<Data extends MenuData> {
  */
 export interface SinglePageMenuDefinition<Data extends MenuData>
   extends BaseMenuDefinition<Data> {
+  /** Type of page */
+  type: "single"
+
   /** Fetch a single item for this menu */
   fetch: (params: MenuParams<Data>) => Promise<MenuItem<Data>> | MenuItem<Data>
 
@@ -89,6 +95,9 @@ export interface SinglePageMenuDefinition<Data extends MenuData>
  */
 export interface PaginationMenuDefinition<Data extends MenuData>
   extends BaseMenuDefinition<Data> {
+  /** Type of page */
+  type: "pagination"
+
   /** Number of items to display per page */
   perPage: number
 

@@ -7,8 +7,10 @@ import type {
   MenuData,
   MenuDefinition,
   MenuParams,
-  PaginationMenuDefinition
+  PaginationMenuDefinition,
+  SinglePageMenuDefinition
 } from "./types"
+import { SinglePageMenu } from "./menus/single"
 
 export interface CreateSessionOptions<Data extends MenuData> {
   /** Menu name to create session for */
@@ -17,7 +19,7 @@ export interface CreateSessionOptions<Data extends MenuData> {
   /** The interaction that triggered this menu */
   interaction: RepliableInteraction
 
-  /** Parameters to pass to the menu's fetch function */
+  /** Parameters to pass to the menu"s fetch function */
   params: MenuParams<Data>
 
   /** Preload all pages on render (pagination menus only) */
@@ -43,17 +45,55 @@ export class MenuManager {
       return
     }
 
+    this.validateMenu(menu)
+
     this.menus.set(menu.name, menu)
     Logger.info(`Loaded menu: ${menu.name}`)
   }
 
   /**
+   * Validate menu definition based on type
+   */
+  private validateMenu<Data extends MenuData>(menu: MenuDefinition<Data>): void {
+    if (!menu.createKey) {
+      throw new Error(`Menu "${menu.name}" must have a createKey function`)
+    }
+
+    switch (menu.type) {
+      case "pagination":
+        const paginationMenu = menu as PaginationMenuDefinition<Data>
+        if (!paginationMenu.perPage) {
+          throw new Error(`Pagination menu "${menu.name}" must have perPage`)
+        }
+        if (!paginationMenu.renderItem) {
+          throw new Error(`Pagination menu "${menu.name}" must have renderItem`)
+        }
+        break
+
+      case "single":
+        const singleMenu = menu as SinglePageMenuDefinition<Data>
+        if (!singleMenu.renderBody) {
+          throw new Error(`Single page menu "${menu.name}" must have renderBody`)
+        }
+        break
+
+      default:
+        throw new Error(`Unknown menu: ${menu}`)
+    }
+  }
+
+ /**
    * Create a new menu session
    */
   public async createSession<Data extends MenuData>(
     options: CreateSessionOptions<Data>
   ): Promise<BaseMenu<Data>> {
-    const { menu: menuName, params, interaction, preloadAll } = options
+    const {
+      menu: menuName,
+      params,
+      interaction,
+      preloadAll
+    } = options
     const userId = interaction.user.id
 
     const definition = this.menus.get(menuName)
@@ -66,9 +106,9 @@ export class MenuManager {
     const ephemeral = definition.sessionOptions?.ephemeral ?? false
 
     const contextKey = await definition.createKey(params)
-
     const existingMenu = this.sessions.get(contextKey)
 
+    // Check if we should reuse an existing session
     if (existingMenu) {
       if (mode === "shared") {
         // Check if user already has this menu open
@@ -96,27 +136,39 @@ export class MenuManager {
       }
     }
 
-    // Create new session
+    // Create new menu based on type
     const config = getPluginConfig()
-
     let menu: BaseMenu<Data>
 
-    if ("renderItem" in definition) {
-      menu = new PaginationMenu<Data>(
-        definition as PaginationMenuDefinition<Data>,
-        contextKey,
-        params,
-        userId,
-        {
-          preloadAll: preloadAll ?? config.preloadAll
-        }
-      )
-    } else {
-      menu = new PaginationMenu(definition as any, contextKey, params, userId)
+    switch (definition.type) {
+      case "pagination":
+        menu = new PaginationMenu<Data>(
+          definition as PaginationMenuDefinition<Data>,
+          contextKey,
+          params,
+          userId,
+          {
+            preloadAll: preloadAll ?? config.preloadAll
+          }
+        )
+        break
+
+      case "single":
+        menu = new SinglePageMenu<Data>(
+          definition as SinglePageMenuDefinition<Data>,
+          contextKey,
+          params,
+          userId
+        )
+        break
+
+      default:
+        throw new Error(`Unknown menu: ${definition}`)
     }
 
-    await (menu as any).initialize()
+    await menu.initialize()
 
+    // Add initial user session
     await menu.addUserSession({
       userId,
       messageId: "",
@@ -126,8 +178,10 @@ export class MenuManager {
       createdAt: Date.now()
     })
 
+    // Store the session
     this.sessions.set(contextKey, menu)
 
+    // Set up TTL if defined
     const ttl = definition.sessionOptions?.ttl
     if (ttl) {
       this.setupTTL(contextKey, ttl)
@@ -212,9 +266,6 @@ export class MenuManager {
     this.sessionTimers.set(sessionId, timer)
   }
 
-  public generateSessionId(): string {
-    return `menu_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
 }
 
 export const menuManager = new MenuManager()

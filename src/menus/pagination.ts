@@ -470,8 +470,15 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   }
 }
 
+/**
+ * Helper to create a pagination menu definition
+ * Automatically sets type to 'pagination'
+ */
 export function paginationMenu<Data extends MenuData>(
-  definition: PaginationMenuDefinition<Data>
+  definition: Omit<PaginationMenuDefinition<Data>, "type">
 ): PaginationMenuDefinition<Data> {
-  return definition
+  return {
+    ...definition,
+    type: "pagination"
+  }
 }

@@ -198,7 +198,7 @@ export abstract class BaseMenu<Data extends MenuData> {
     }
   }
 
-  protected async initialize(): Promise<void> {
+  public async initialize(): Promise<void> {
     if (this.isInitialized) {
       return
     }

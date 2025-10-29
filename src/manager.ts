@@ -1,53 +1,43 @@
 import { Logger } from "commandkit"
+import type { RepliableInteraction } from "discord.js"
 import type { BaseMenu } from "./menus/base"
 import { PaginationMenu } from "./menus/pagination"
 import { getPluginConfig } from "./plugin"
 import type {
   MenuData,
+  MenuDefinition,
   MenuParams,
-  PaginationMenuDefinition,
-  SinglePageMenuDefinition
+  PaginationMenuDefinition
 } from "./types"
 
 export interface CreateSessionOptions<Data extends MenuData> {
   /** Menu name to create session for */
   menu: string
 
+  /** The interaction that triggered this menu */
+  interaction: RepliableInteraction
+
   /** Parameters to pass to the menu's fetch function */
   params: MenuParams<Data>
-
-  /** User ID creating this session */
-  userId: string
-
-  /** Custom session ID (generated if not provided) */
-  sessionId?: string
-
-  /** Items per page (pagination menus only) */
-  itemsPerPage?: number
 
   /** Preload all pages on render (pagination menus only) */
   preloadAll?: boolean
 }
 
-export interface SessionKey {
-  menuName: string
-  contextKey: string // Serialized params for matching
-}
-
 export class MenuManager {
-  private menus = new Map<string, any>()
-  private sessions = new Map<string, BaseMenu<any>>()
-  private sessionTimers = new Map<string, NodeJS.Timeout>()
+  /** Registered menu definitions */
+  private menus = new Map<string, MenuDefinition<any>>()
 
-  // Map context keys to session IDs for reuse
-  private contextToSession = new Map<string, string>()
+  /** Active menu sessions */
+  private sessions = new Map<string, BaseMenu<any>>()
+
+  /** Session auto-destroy timers */
+  private sessionTimers = new Map<string, NodeJS.Timeout>()
 
   /**
    * Register a menu definition
    */
-  public register<Data extends MenuData>(
-    menu: SinglePageMenuDefinition<Data> | PaginationMenuDefinition<Data>
-  ): void {
+  public register<Data extends MenuData>(menu: MenuDefinition<Data>): void {
     if (this.menus.has(menu.name)) {
       Logger.error(`Duplicate menu: ${menu.name}`)
       return
@@ -58,26 +48,13 @@ export class MenuManager {
   }
 
   /**
-   * Generate a context key from menu name and params
-   */
-  private generateContextKey(menuName: string, params: any): string {
-    return `${menuName}:${JSON.stringify(params)}`
-  }
-
-  /**
    * Create a new menu session
    */
   public async createSession<Data extends MenuData>(
     options: CreateSessionOptions<Data>
-  ): Promise<{ sessionId: string; menu: BaseMenu<Data> }> {
-    const {
-      menu: menuName,
-      params,
-      userId,
-      sessionId,
-      preloadAll,
-      itemsPerPage
-    } = options
+  ): Promise<BaseMenu<Data>> {
+    const { menu: menuName, params, interaction, preloadAll } = options
+    const userId = interaction.user.id
 
     const definition = this.menus.get(menuName)
 
@@ -86,65 +63,77 @@ export class MenuManager {
     }
 
     const mode = definition.sessionOptions?.mode ?? "shared"
+    const ephemeral = definition.sessionOptions?.ephemeral ?? false
 
-    // Check if we should reuse an existing session
-    if (mode === "shared") {
-      const contextKey = this.generateContextKey(menuName, params)
-      const existingSessionId = this.contextToSession.get(contextKey)
+    const contextKey = await definition.createKey(params)
 
-      if (existingSessionId && this.sessions.has(existingSessionId)) {
-        const existingMenu = this.sessions.get(existingSessionId)!
+    const existingMenu = this.sessions.get(contextKey)
 
-        // Add user as viewer
-        existingMenu.addViewer(userId)
-
-        return {
-          sessionId: existingSessionId,
-          menu: existingMenu as BaseMenu<Data>
+    if (existingMenu) {
+      if (mode === "shared") {
+        // Check if user already has this menu open
+        if (existingMenu.hasUserSession(userId)) {
+          return existingMenu
         }
+
+        // Add this user to the shared session
+        await existingMenu.addUserSession({
+          userId,
+          messageId: "",
+          channelId: interaction.channelId!,
+          currentPage: 0,
+          ephemeral,
+          createdAt: Date.now()
+        })
+
+        return existingMenu
+      } else if (mode === "private") {
+        if (existingMenu.getCreatorId() !== userId) {
+          throw new Error("This menu is currently in use by another user")
+        }
+
+        return existingMenu
       }
     }
 
+    // Create new session
     const config = getPluginConfig()
-
-    const id = sessionId ?? this.generateSessionId()
 
     let menu: BaseMenu<Data>
 
     if ("renderItem" in definition) {
       menu = new PaginationMenu<Data>(
         definition as PaginationMenuDefinition<Data>,
-        id,
+        contextKey,
         params,
         userId,
         {
           preloadAll: preloadAll ?? config.preloadAll
         }
       )
-
-      // Set items per page if provided
-      if (itemsPerPage && "definition" in menu) {
-        ;(menu as any).definition.perPage = itemsPerPage
-      }
     } else {
-      // menu = new SinglePageMenu(definition, sessionId, params)
-      menu = new PaginationMenu(definition, id, params, userId)
+      menu = new PaginationMenu(definition as any, contextKey, params, userId)
     }
 
-    this.sessions.set(id, menu)
+    await (menu as any).initialize()
 
-    // Store context mapping for shared sessions
-    if (mode === "shared") {
-      const contextKey = this.generateContextKey(menuName, params)
-      this.contextToSession.set(contextKey, id)
-    }
+    await menu.addUserSession({
+      userId,
+      messageId: "",
+      channelId: interaction.channelId!,
+      currentPage: 0,
+      ephemeral,
+      createdAt: Date.now()
+    })
+
+    this.sessions.set(contextKey, menu)
 
     const ttl = definition.sessionOptions?.ttl
     if (ttl) {
-      this.setupTTL(id, ttl)
+      this.setupTTL(contextKey, ttl)
     }
 
-    return { sessionId: id, menu }
+    return menu
   }
 
   /**
@@ -174,21 +163,12 @@ export class MenuManager {
       return
     }
 
-    // Remove context mapping
-    for (const [contextKey, sid] of this.contextToSession.entries()) {
-      if (sid === sessionId) {
-        this.contextToSession.delete(contextKey)
-      }
-    }
-
-    // Clear TTL timer if exists
     const timer = this.sessionTimers.get(sessionId)
     if (timer) {
       clearTimeout(timer)
       this.sessionTimers.delete(sessionId)
     }
 
-    // Call destroy hook
     await menu.destroy()
     this.sessions.delete(sessionId)
   }
@@ -216,7 +196,7 @@ export class MenuManager {
 
   public getMenu<Data extends MenuData>(
     menuName: string
-  ): BaseMenu<Data> | undefined {
+  ): MenuDefinition<Data> | undefined {
     return this.menus.get(menuName)
   }
 

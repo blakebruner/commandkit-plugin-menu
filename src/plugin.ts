@@ -81,7 +81,7 @@ export class MenuPlugin extends RuntimePlugin<MenuPluginOptions> {
       return
     }
 
-    const [prefix, action, sessionKey] = interaction.customId.split(":")
+    const [prefix, sessionKey, action] = interaction.customId.split(":")
     if (prefix !== this.options.actionPrefix) {
       return
     }

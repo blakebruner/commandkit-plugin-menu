@@ -36,10 +36,10 @@ export function transformComponentCustomId(
 
     if (isItemAction && itemIndex !== undefined) {
       // Item action: append index
-      transformed.custom_id = `${actionPrefix}:${originalId}|${itemIndex}:${sessionId}`
+      transformed.custom_id = `${actionPrefix}:${sessionId}:${originalId}|${itemIndex}`
     } else {
       // Regular action: no index
-      transformed.custom_id = `${actionPrefix}:${originalId}:${sessionId}`
+      transformed.custom_id = `${actionPrefix}:${sessionId}:${originalId}`
     }
   }
 

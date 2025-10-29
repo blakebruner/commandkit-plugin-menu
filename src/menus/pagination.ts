@@ -2,16 +2,15 @@ import { Logger } from "commandkit"
 import {
   ActionRowBuilder,
   type APIComponentInContainer,
-  APIContainerComponent,
   ButtonBuilder,
   type ButtonInteraction,
+  type Client,
   ContainerBuilder,
-  type ContainerComponentBuilder,
   StringSelectMenuBuilder,
   type StringSelectMenuInteraction,
   StringSelectMenuOptionBuilder
 } from "discord.js"
-import { MAX_SELECT_OPTIONS } from "../constants"
+import { INTERNAL_ACTION_PREFIX, MAX_SELECT_OPTIONS } from "../constants"
 import { getPluginConfig } from "../plugin"
 import type {
   MenuData,
@@ -37,8 +36,6 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
 
   private items: MenuItem<Data>[] = []
 
-  private currentPage = 0
-
   private pageCount = 0
 
   // Cache of fully-built pages (ContainerBuilders)
@@ -57,6 +54,26 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
     super(definition, sessionId, params, creatorId)
     this.definition = definition
     this.renderOptions = options ?? {}
+  }
+
+  /**
+   * Get a page for a specific user
+   */
+  private async getPageForUser(userId: string): Promise<ContainerBuilder> {
+    const pageNumber = this.getUserPage(userId)
+    return this.getPage(pageNumber)
+  }
+
+  /**
+   * Render for a specific user (uses their page position)
+   */
+  async renderForUser(userId: string): Promise<ContainerBuilder> {
+    return this.getPageForUser(userId)
+  }
+
+  private createNavigationActionId(action: string): string {
+    const config = getPluginConfig()
+    return `${config.actionPrefix}:${this.sessionId}:${INTERNAL_ACTION_PREFIX}${action}`
   }
 
   /**
@@ -108,9 +125,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
         ctx
       )
       const itemComponentHandled = this.handleComponentOrFragment(itemComponent)
-      console.log("ITEM COMPONENT: ", itemComponentHandled)
 
-      // Transform custom_ids for THIS SPECIFIC ITEM (with its index)
       const transformedComponents = itemComponentHandled.map(comp => {
         // Transform with the item's global index
         const config = getPluginConfig()
@@ -119,11 +134,9 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
           config.actionPrefix,
           this.sessionId,
           new Set(this.actions.keys()),
-          globalIndex // ✅ Pass the specific item's index
+          globalIndex
         )
       })
-
-      console.log("TRANSFORMED COMPONENT: ", transformedComponents)
       comps.push(...transformedComponents)
     }
 
@@ -132,12 +145,6 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
     if (navigation) {
       comps.push(...navigation)
     }
-
-    // const components: APIComponentInContainer[] = comps.map(c => c.toJSON())
-    // const itemIds = findAllCustomIds(components)
-    // console.log("IDS: ", itemIds)
-    // console.log(components)
-    // console.log("------------------")
 
     const builder = new ContainerBuilder({
       components: comps
@@ -160,18 +167,20 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
 
     const config = getPluginConfig()
 
-    const row1 = new ActionRowBuilder().addComponents(
-      this.buildNavigationButton(config, "first", !canPrev),
-      this.buildNavigationButton(config, "previous", !canPrev),
-      this.buildNavigationButton(config, "next", !canNext),
-      this.buildNavigationButton(config, "last", !canNext)
-    )
+    const buttonNavigation = new ActionRowBuilder()
+      .addComponents(
+        this.buildNavigationButton(config, "first", !canPrev),
+        this.buildNavigationButton(config, "previous", !canPrev),
+        this.buildNavigationButton(config, "next", !canNext),
+        this.buildNavigationButton(config, "last", !canNext)
+      )
+      .toJSON()
 
-    const row2 = new ActionRowBuilder().addComponents(
-      this.buildNavigationSelectMenu(pageNumber)
-    )
+    const selectMenuNavigation = new ActionRowBuilder()
+      .addComponents(this.buildNavigationSelectMenu(pageNumber))
+      .toJSON()
 
-    return [row1.toJSON(), row2.toJSON()] as APIComponentInContainer[]
+    return [buttonNavigation, selectMenuNavigation] as APIComponentInContainer[]
   }
 
   private buildNavigationButton(
@@ -180,7 +189,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
     disabled: boolean
   ): ButtonBuilder {
     const buttonOptions = config.navigation[action]
-    const buttonId = this.createActionId(action)
+    const buttonId = this.createNavigationActionId(action)
     const button = new ButtonBuilder()
       .setCustomId(buttonId)
       .setStyle(buttonOptions.style)
@@ -207,7 +216,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
     }
 
     // TODO: make this configurable?
-    const selectId = this.createActionId("goto")
+    const selectId = this.createNavigationActionId("goto")
     const select = new StringSelectMenuBuilder()
       .setCustomId(selectId)
       .setPlaceholder(`🔄 Jump to page (${pageNumber + 1} / ${this.pageCount})`)
@@ -261,101 +270,101 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   async render(): Promise<ContainerBuilder> {
     await this.initialize()
 
-    // Fetch all items
     this.items = await this.definition.fetch(this.params)
-
-    // Calculate page count
     this.calculatePageCount()
-
-    // Clear old cache
     this.clearPageCache()
 
-    // Preload all pages if requested
     if (this.renderOptions.preloadAll) {
       await this.preloadAllPages()
     }
 
-    // Return the current page
-    return this.getPage(this.currentPage)
+    // Return page 0 for initial render
+    return this.getPage(0)
   }
 
   /**
-   * Navigate to a specific page
+   * Navigate to a specific page for a user
    */
-  async goToPage(pageNumber: number): Promise<ContainerBuilder> {
+  async goToPage(
+    userId: string,
+    pageNumber: number
+  ): Promise<ContainerBuilder> {
     if (pageNumber < 0 || pageNumber >= this.pageCount) {
       throw new Error(`Invalid page number: ${pageNumber}`)
     }
 
-    this.currentPage = pageNumber
-    return this.getPage(this.currentPage)
+    this.setUserPage(userId, pageNumber)
+    return this.getPage(pageNumber)
   }
 
   /**
-   * Navigate to next page
+   * Navigate to next page for a user
    */
-  async nextPage(): Promise<ContainerBuilder | null> {
-    if (!this.hasNextPage()) {
+  async nextPage(userId: string): Promise<ContainerBuilder | null> {
+    const currentPage = this.getUserPage(userId)
+
+    if (currentPage >= this.pageCount - 1) {
       return null
     }
 
-    this.currentPage++
-    return this.getPage(this.currentPage)
+    this.setUserPage(userId, currentPage + 1)
+    return this.getPage(currentPage + 1)
   }
 
   /**
-   * Navigate to previous page
+   * Navigate to previous page for a user
    */
-  async previousPage(): Promise<ContainerBuilder | null> {
-    if (!this.hasPreviousPage()) {
+  async previousPage(userId: string): Promise<ContainerBuilder | null> {
+    const currentPage = this.getUserPage(userId)
+
+    if (currentPage <= 0) {
       return null
     }
 
-    this.currentPage--
-    return this.getPage(this.currentPage)
+    this.setUserPage(userId, currentPage - 1)
+    return this.getPage(currentPage - 1)
   }
 
   /**
-   * Navigate to first page
+   * Navigate to first page for a user
    */
-  async firstPage(): Promise<ContainerBuilder> {
-    this.currentPage = 0
-    return this.getPage(this.currentPage)
+  async firstPage(userId: string): Promise<ContainerBuilder> {
+    this.setUserPage(userId, 0)
+    return this.getPage(0)
   }
 
   /**
-   * Navigate to last page
+   * Navigate to last page for a user
    */
-  async lastPage(): Promise<ContainerBuilder> {
-    this.currentPage = this.pageCount - 1
-    return this.getPage(this.currentPage)
+  async lastPage(userId: string): Promise<ContainerBuilder> {
+    const lastPage = this.pageCount - 1
+    this.setUserPage(userId, lastPage)
+    return this.getPage(lastPage)
   }
 
   /**
-   * Refetch data and rebuild pages
+   * Refetch data and update all users
    */
-  async refetch(): Promise<ContainerBuilder> {
-    // Fetch fresh data
+  async refetch(client?: Client): Promise<void> {
     this.items = await this.definition.fetch(this.params)
-
-    // Recalculate page count
     this.calculatePageCount()
-
-    // Clear cache to force rebuild
     this.clearPageCache()
 
-    // Ensure current page is valid
-    if (this.currentPage >= this.pageCount) {
-      this.currentPage = Math.max(0, this.pageCount - 1)
+    // Ensure all users' pages are valid
+    for (const userSession of this.getAllUserSessions()) {
+      if (userSession.currentPage >= this.pageCount) {
+        this.setUserPage(userSession.userId, Math.max(0, this.pageCount - 1))
+      }
     }
 
-    // Preload all pages if requested
     if (this.renderOptions.preloadAll) {
       await this.preloadAllPages()
     }
 
-    // Return current page
-    return this.getPage(this.currentPage)
+    // Broadcast update to all users if client is provided
+    if (client) {
+      await this.broadcastUpdate(client)
+    }
   }
 
   /**
@@ -363,61 +372,94 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
    */
   async handleInteraction(
     interaction: ButtonInteraction | StringSelectMenuInteraction,
-    data?: any
+    actionRaw: string
   ): Promise<ContainerBuilder | null> {
-    if (!this.canInteract(interaction.user.id)) {
+    const userId = interaction.user.id
+
+    if (!this.canInteract(userId)) {
       Logger.warn(
-        `User ${interaction.user.id} attempted to interact with session ${this.sessionId} without permission.`
+        `User ${userId} attempted to interact with session ${this.sessionId} without permission.`
       )
       return null // User cannot interact with this session
     }
 
-    const config = getPluginConfig()
-
-    // Parse interaction ID
-    const parts = interaction.customId.split(":")
-    if (parts[0] !== config.actionPrefix) {
+    const parsed = this.parseActionId(actionRaw)
+    if (!parsed) {
+      Logger.warn(`Failed to parse action ID: ${actionRaw}`)
       return null
     }
 
-    const action = parts[1]
+    if (parsed.type === "navigation") {
+      switch (parsed.action) {
+        case "first":
+          return this.firstPage(userId)
 
-    switch (action) {
-      case "first":
-        return this.firstPage()
+        case "previous":
+          return this.previousPage(userId)
 
-      case "previous":
-        return this.previousPage()
+        case "next":
+          return this.nextPage(userId)
 
-      case "next":
-        return this.nextPage()
+        case "last":
+          return this.lastPage(userId)
 
-      case "last":
-        return this.lastPage()
-
-      case "indicator":
-        // Page indicator is disabled, no action
-        return null
-
-      case "goto":
-        if (data && typeof data === "string") {
-          const pageIndex = parseInt(data, 10)
-          if (!isNaN(pageIndex)) {
-            return this.goToPage(pageIndex)
+        case "goto":
+          // Get page from select menu value
+          if (interaction.isStringSelectMenu()) {
+            const pageIndex = parseInt(interaction.values[0], 10)
+            if (!isNaN(pageIndex)) {
+              return this.goToPage(userId, pageIndex)
+            }
           }
-        }
-        return null
+          return null
 
-      default:
-        return null
+        case "indicator":
+          // Page indicator is disabled, no action
+          return null
+
+        default:
+          Logger.warn(`Unknown navigation action: ${parsed.action}`)
+          return null
+      }
     }
+
+    // User-defined action
+    const actionHandler = this.actions.get(parsed.action)
+    if (!actionHandler) {
+      Logger.warn(
+        `Unknown action: ${parsed.action} for ${this.definition.name}`
+      )
+      return null
+    }
+
+    if (parsed.itemIndex === undefined) {
+      Logger.warn(`No item index provided for action: ${parsed.action}`)
+      return null
+    }
+
+    await actionHandler({
+      interaction,
+      params: this.params,
+      sessionData: this.sessionData,
+      sessionId: this.sessionId,
+      item: this.items[parsed.itemIndex],
+      userId: interaction.user.id
+    })
+
+    return this.getPageForUser(userId)
   }
 
   /**
-   * Get current page number (0-indexed)
+   * Get items for a specific user's current page
    */
-  getCurrentPage(): number {
-    return this.currentPage
+  getCurrentPageItemsForUser(userId: string): MenuItem<Data>[] {
+    const currentPage = this.getUserPage(userId)
+    const startIdx = currentPage * this.definition.perPage
+    const endIdx = Math.min(
+      startIdx + this.definition.perPage,
+      this.items.length
+    )
+    return this.items.slice(startIdx, endIdx)
   }
 
   /**
@@ -425,39 +467,6 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
    */
   getPageCount(): number {
     return this.pageCount
-  }
-
-  /**
-   * Check if there's a next page
-   */
-  hasNextPage(): boolean {
-    return this.currentPage < this.pageCount - 1
-  }
-
-  /**
-   * Check if there's a previous page
-   */
-  hasPreviousPage(): boolean {
-    return this.currentPage > 0
-  }
-
-  /**
-   * Get all items
-   */
-  getItems(): MenuItem<Data>[] {
-    return this.items
-  }
-
-  /**
-   * Get items for current page
-   */
-  getCurrentPageItems(): MenuItem<Data>[] {
-    const startIdx = this.currentPage * this.definition.perPage
-    const endIdx = Math.min(
-      startIdx + this.definition.perPage,
-      this.items.length
-    )
-    return this.items.slice(startIdx, endIdx)
   }
 }
 

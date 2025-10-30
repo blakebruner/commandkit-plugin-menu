@@ -1,13 +1,16 @@
-import { Logger } from "commandkit"
+import CommandKit, { Logger } from "commandkit"
 import {
   type APIComponentInContainer,
   type ButtonInteraction,
   type Client,
   type ContainerBuilder,
+  type Interaction,
+  type InteractionResponse,
   type RGBTuple,
   resolveColor,
   type StringSelectMenuInteraction,
-  type TextChannel
+  type TextChannel,
+  WebhookClient
 } from "discord.js"
 import { INTERNAL_ACTION_PREFIX, RESERVED_ACTIONS } from "../constants"
 import { getPluginConfig } from "../plugin"
@@ -26,7 +29,7 @@ export abstract class BaseMenu<Data extends MenuData> {
   protected definition: BaseMenuDefinition<Data>
   protected sessionId: string
   protected params: MenuParams<Data>
-  protected sessionData!: MenuSession<Data>
+  protected sessionData: MenuSession<Data> = {}
   protected isInitialized = false
   protected colorResolved?: RGBTuple | number
 
@@ -50,7 +53,6 @@ export abstract class BaseMenu<Data extends MenuData> {
     this.creatorId = creatorId
 
     if (definition.actions) {
-      // Register actions from definition
       for (const [actionName, handler] of Object.entries(definition.actions)) {
         this.registerAction(actionName, handler)
       }
@@ -65,6 +67,27 @@ export abstract class BaseMenu<Data extends MenuData> {
   }
 
   /**
+   * Get menu params
+   */
+  public getParams(): MenuParams<Data> {
+    return this.params
+  }
+
+  /**
+   * Set session data
+   */
+  public setSessionData(sessionData: MenuSession<Data>): void {
+    this.sessionData = sessionData
+  }
+
+  /**
+   * Get session data
+   */
+  public getSessionData(): MenuSession<Data> {
+    return this.sessionData
+  }
+
+  /**
    * Add a user session
    */
   async addUserSession(userSession: UserSession): Promise<void> {
@@ -74,39 +97,29 @@ export abstract class BaseMenu<Data extends MenuData> {
   /**
    * Remove a user session
    */
-  removeUserSession(userId: string): void {
+  public removeUserSession(userId: string): void {
     this.userSessions.delete(userId)
   }
 
   /**
    * Check if a user has a session
    */
-  hasUserSession(userId: string): boolean {
+  public hasUserSession(userId: string): boolean {
     return this.userSessions.has(userId)
   }
 
   /**
    * Get a user's session
    */
-  getUserSession(userId: string): UserSession | undefined {
+  public getUserSession(userId: string): UserSession | undefined {
     return this.userSessions.get(userId)
   }
 
   /**
    * Get all user sessions
    */
-  getAllUserSessions(): UserSession[] {
+  public getAllUserSessions(): UserSession[] {
     return Array.from(this.userSessions.values())
-  }
-
-  /**
-   * Update a user's message ID after sending
-   */
-  updateUserMessageId(userId: string, messageId: string): void {
-    const session = this.userSessions.get(userId)
-    if (session) {
-      session.messageId = messageId
-    }
   }
 
   /**
@@ -139,7 +152,7 @@ export abstract class BaseMenu<Data extends MenuData> {
   /**
    * Get user's current page
    */
-  getUserPage(userId: string): number {
+  public getUserPage(userId: string): number {
     const session = this.userSessions.get(userId)
     return session?.currentPage ?? 0
   }
@@ -147,7 +160,7 @@ export abstract class BaseMenu<Data extends MenuData> {
   /**
    * Set user's current page
    */
-  setUserPage(userId: string, page: number): void {
+  public setUserPage(userId: string, page: number): void {
     const session = this.userSessions.get(userId)
     if (session) {
       session.currentPage = page
@@ -157,7 +170,13 @@ export abstract class BaseMenu<Data extends MenuData> {
   /**
    * Broadcast update to all users with this menu open
    */
-  async broadcastUpdate(client: Client): Promise<void> {
+  public async broadcastUpdate(): Promise<void> {
+    const client = CommandKit.instance?.client
+    if (!client) {
+      Logger.error("Cannot broadcast update: CommandKit client not available")
+      return
+    }
+
     const updatePromises: Promise<void>[] = []
 
     for (const userSession of this.userSessions.values()) {
@@ -170,31 +189,208 @@ export abstract class BaseMenu<Data extends MenuData> {
   /**
    * Update a specific user's message
    */
-  async updateUserMessage(client: Client, userId: string): Promise<void> {
-    const userSession = this.userSessions.get(userId)
+  // public async updateUserMessage(
+  //   client: Client,
+  //   userId: string
+  // ): Promise<void> {
+  //   const userSession = this.userSessions.get(userId)
 
-    if (!userSession || !userSession.messageId) {
+  //   if (!userSession || !userSession.messageId) {
+  //     return
+  //   }
+
+  //   try {
+  //     const channel = (await client.channels.fetch(
+  //       userSession.channelId
+  //     )) as TextChannel
+  //     if (!channel?.isTextBased()) {
+  //       return
+  //     }
+
+  //     const message = await channel.messages.fetch(userSession.messageId)
+
+  //     // Render the page for this specific user
+  //     const page = await this.renderForUser(userId)
+
+  //     await message.edit({
+  //       components: [page]
+  //     })
+  //   } catch (error) {
+  //     Logger.error(`Failed to update message for user ${userId}: ${error}`)
+  //   }
+  // }
+
+  /**
+   * Update message context after interaction reply
+   * Handles both ephemeral and non-ephemeral messages
+   */
+  public async updateMessageContext(
+    userId: string,
+    response: InteractionResponse,
+    interaction: Interaction
+  ) {
+    const session = this.userSessions.get(userId)
+    if (!session) {
       return
     }
 
     try {
-      const channel = (await client.channels.fetch(
-        userSession.channelId
-      )) as TextChannel
-      if (!channel?.isTextBased()) {
-        return
+      if (session.ephemeral) {
+        session.messageId = "@original"
+        session.channelId = interaction.channelId!
+
+        // Store interaction token and ID for editing later
+        session.interactionToken = interaction.token
+        session.interactionId = interaction.id
+
+        // Interaction tokens expire after 15 minutes
+        session.tokenExpiresAt = Date.now() + 15 * 60 * 1000
+
+        Logger.debug(`Updated ephemeral message context for user ${userId}`)
+      } else {
+        // For non-ephemeral messages, fetch to get the message ID
+        const message = await response.fetch()
+        session.messageId = message.id
+        session.channelId = message.channelId
+
+        Logger.debug(
+          `Updated message context for user ${userId}: ${message.id}`
+        )
       }
+    } catch (error) {
+      Logger.error(
+        `Failed to update message context for user ${userId}: ${error}`
+      )
+    }
+  }
 
-      const message = await channel.messages.fetch(userSession.messageId)
+  /**
+   * Update a specific user's message
+   * Handles both ephemeral and non-ephemeral messages
+   */
+  public async updateUserMessage(
+    client: Client,
+    userId: string
+  ): Promise<void> {
+    const userSession = this.userSessions.get(userId)
 
+    if (!userSession || !userSession.messageId) {
+      Logger.debug(`No message to update for user ${userId}`)
+      return
+    }
+
+    try {
       // Render the page for this specific user
       const page = await this.renderForUser(userId)
 
-      await message.edit({
+      const updatePayload = {
         components: [page]
-      })
+      }
+
+      if (userSession.ephemeral) {
+        await this.updateEphemeralMessage(
+          client,
+          userId,
+          userSession,
+          updatePayload
+        )
+      } else {
+        await this.updateNonEphemeralMessage(
+          client,
+          userId,
+          userSession,
+          updatePayload
+        )
+      }
     } catch (error) {
       Logger.error(`Failed to update message for user ${userId}: ${error}`)
+    }
+  }
+
+  /**
+   * Update an ephemeral message via webhook
+   */
+  private async updateEphemeralMessage(
+    client: Client,
+    userId: string,
+    userSession: UserSession,
+    payload: any
+  ): Promise<void> {
+    // Validate token exists
+    if (!userSession.interactionToken || !userSession.tokenExpiresAt) {
+      Logger.warn(
+        `No interaction token for ephemeral message (user: ${userId})`
+      )
+      return
+    }
+
+    // Check token expiry
+    if (Date.now() > userSession.tokenExpiresAt) {
+      Logger.warn(`Interaction token expired for user ${userId}`)
+      this.userSessions.delete(userId)
+      return
+    }
+
+    try {
+      const webhook = new WebhookClient({
+        id: client.user!.id,
+        token: userSession.interactionToken
+      })
+
+      await webhook.editMessage(userSession.messageId, payload)
+      Logger.debug(`Updated ephemeral message for user ${userId}`)
+    } catch (error) {
+      // Handle webhook-specific errors
+      if (error instanceof Error) {
+        if (
+          error.message.includes("Unknown Webhook") ||
+          error.message.includes("Invalid Webhook Token") ||
+          error.message.includes("Unknown Message")
+        ) {
+          Logger.warn(
+            `Ephemeral message no longer accessible for user ${userId}: ${error}`
+          )
+          this.userSessions.delete(userId)
+        } else {
+          // Re-throw other errors
+          throw error
+        }
+      }
+    }
+  }
+
+  /**
+   * Update a non-ephemeral message via channel
+   */
+  private async updateNonEphemeralMessage(
+    client: Client,
+    userId: string,
+    userSession: UserSession,
+    payload: any
+  ): Promise<void> {
+    const channel = await client.channels.fetch(userSession.channelId)
+
+    if (!channel?.isTextBased()) {
+      Logger.warn(`Channel ${userSession.channelId} is not text-based`)
+      return
+    }
+
+    try {
+      const message = await (channel as TextChannel).messages.fetch(
+        userSession.messageId
+      )
+      await message.edit(payload)
+      Logger.debug(`Updated non-ephemeral message for user ${userId}`)
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("Unknown Message")) {
+        Logger.warn(
+          `Message ${userSession.messageId} no longer exists for user ${userId}`
+        )
+        this.userSessions.delete(userId)
+      } else {
+        // Re-throw other errors
+        throw error
+      }
     }
   }
 
@@ -205,9 +401,8 @@ export abstract class BaseMenu<Data extends MenuData> {
 
     // Initialize session data
     if (this.definition.onSessionStart) {
-      this.sessionData = await this.definition.onSessionStart(this.params)
-    } else {
-      this.sessionData = {}
+      const sessionData = await this.definition.onSessionStart(this.params)
+      this.setSessionData(sessionData)
     }
 
     if (this.definition.color) {

@@ -13,6 +13,15 @@ export interface UserSession {
   /** Channel ID where the message was sent */
   channelId: string
 
+  /** Interaction token for responding to interactions, used for ephemeral */
+  interactionToken?: string
+
+  /** Interaction ID for responding to interactions, used for ephemeral */
+  interactionId?: string
+
+  /** Timestamp when interaction token expires */
+  tokenExpiresAt?: number
+
   /** Current page number for this user (pagination menus only) */
   currentPage: number
 

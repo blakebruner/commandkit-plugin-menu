@@ -345,10 +345,13 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Refetch data and update all users
    */
-  async refetch(client?: Client): Promise<void> {
-    this.items = await this.definition.fetch(this.params)
-    this.calculatePageCount()
-    this.clearPageCache()
+  async refetch(items?: boolean): Promise<void> {
+    // Refetch items if requested
+    if (items) {
+      this.items = await this.definition.fetch(this.params)
+      this.calculatePageCount()
+      this.clearPageCache()
+    }
 
     // Ensure all users' pages are valid
     for (const userSession of this.getAllUserSessions()) {
@@ -362,9 +365,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
     }
 
     // Broadcast update to all users if client is provided
-    if (client) {
-      await this.broadcastUpdate(client)
-    }
+    await this.broadcastUpdate()
   }
 
   /**

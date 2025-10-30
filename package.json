@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "@types/lodash": "^4.17.20",
+    "ioredis": "^5.8.2",
     "lodash": "^4.17.21"
   }
 }

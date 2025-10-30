@@ -1,12 +1,12 @@
-import { ContainerBuilder, ButtonInteraction, StringSelectMenuInteraction } from "discord.js"
 import type {
-  SinglePageMenuDefinition,
-  MenuData
-} from "../types"
+  ButtonInteraction,
+  ContainerBuilder,
+  StringSelectMenuInteraction
+} from "discord.js"
+import type { MenuData, SinglePageMenuDefinition } from "../types"
 import { BaseMenu } from "./base"
 
 export class SinglePageMenu<Data extends MenuData> extends BaseMenu<Data> {
-  
   public render(): Promise<ContainerBuilder> {
     throw new Error("Method not implemented.")
   }
@@ -15,7 +15,10 @@ export class SinglePageMenu<Data extends MenuData> extends BaseMenu<Data> {
     throw new Error("Method not implemented.")
   }
 
-  public handleInteraction(interaction: ButtonInteraction | StringSelectMenuInteraction, action: string): Promise<ContainerBuilder | null> {
+  public handleInteraction(
+    interaction: ButtonInteraction | StringSelectMenuInteraction,
+    action: string
+  ): Promise<ContainerBuilder | null> {
     throw new Error("Method not implemented.")
   }
   // ... implementation

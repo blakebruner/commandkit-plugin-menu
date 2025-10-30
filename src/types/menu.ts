@@ -1,4 +1,8 @@
-import type { ColorResolvable, ContainerComponentBuilder } from "discord.js"
+import type {
+  Awaitable,
+  ColorResolvable,
+  ContainerComponentBuilder
+} from "discord.js"
 import type { ActionHandlers } from "./action"
 import type { SessionContext, SessionOptions } from "./session"
 
@@ -50,12 +54,10 @@ export interface BaseMenuDefinition<Data extends MenuData> {
   sessionOptions?: SessionOptions
 
   /** Create a unique key to store the session */
-  createKey: (params: MenuParams<Data>) => Promise<string> | string
+  createKey: (params: MenuParams<Data>) => Awaitable<string>
 
   /** Initialize session data when session starts */
-  onSessionStart?: (
-    params: MenuParams<Data>
-  ) => Promise<MenuSession<Data>> | MenuSession<Data>
+  onSessionStart?: (params: MenuParams<Data>) => Awaitable<MenuSession<Data>>
 
   /** Cleanup when session ends */
   onSessionEnd?: (ctx: SessionContext<Data>) => Promise<void>
@@ -63,7 +65,7 @@ export interface BaseMenuDefinition<Data extends MenuData> {
   /** Render the menu title */
   renderTitle?: (
     ctx: SessionContext<Data>
-  ) => Promise<ContainerComponentOrFragment> | ContainerComponentOrFragment
+  ) => Awaitable<ContainerComponentOrFragment>
 
   /**
    * Define custom actions for this menu
@@ -81,13 +83,13 @@ export interface SinglePageMenuDefinition<Data extends MenuData>
   type: "single"
 
   /** Fetch a single item for this menu */
-  fetch: (params: MenuParams<Data>) => Promise<MenuItem<Data>> | MenuItem<Data>
+  fetch: (params: MenuParams<Data>) => Awaitable<MenuItem<Data>>
 
   /** Render the menu body */
   renderBody: (
     item: MenuItem<Data>,
     ctx: SessionContext<Data>
-  ) => Promise<ContainerComponentOrFragment> | ContainerComponentOrFragment
+  ) => Awaitable<ContainerComponentOrFragment>
 }
 
 /**
@@ -102,9 +104,7 @@ export interface PaginationMenuDefinition<Data extends MenuData>
   perPage: number
 
   /** Fetch all items for pagination */
-  fetch: (
-    params: MenuParams<Data>
-  ) => Promise<MenuItem<Data>[]> | MenuItem<Data>[]
+  fetch: (params: MenuParams<Data>) => Awaitable<MenuItem<Data>[]>
 
   /** Render a single item */
   renderItem: (
@@ -112,7 +112,7 @@ export interface PaginationMenuDefinition<Data extends MenuData>
     index: number,
     pageIndex: number,
     ctx: SessionContext<Data>
-  ) => Promise<ContainerComponentOrFragment> | ContainerComponentOrFragment
+  ) => Awaitable<ContainerComponentOrFragment>
 }
 
 /**

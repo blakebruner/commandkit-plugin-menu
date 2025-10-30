@@ -1,4 +1,4 @@
-import type { MessageComponentInteraction } from "discord.js"
+import type { Awaitable, MessageComponentInteraction } from "discord.js"
 import type { MenuData, MenuItem, MenuParams, MenuSession } from "./menu"
 
 /**
@@ -29,7 +29,7 @@ export interface ActionContext<Data extends MenuData> {
  */
 export type ActionHandler<Data extends MenuData> = (
   ctx: ActionContext<Data>
-) => Promise<void> | void
+) => Awaitable<void>
 
 /**
  * Record of action handlers

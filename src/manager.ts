@@ -2,6 +2,7 @@ import { Logger } from "commandkit"
 import type { RepliableInteraction } from "discord.js"
 import type { BaseMenu } from "./menus/base"
 import { PaginationMenu } from "./menus/pagination"
+import { SinglePageMenu } from "./menus/single"
 import { getPluginConfig } from "./plugin"
 import type {
   MenuData,
@@ -10,7 +11,6 @@ import type {
   PaginationMenuDefinition,
   SinglePageMenuDefinition
 } from "./types"
-import { SinglePageMenu } from "./menus/single"
 
 export interface CreateSessionOptions<Data extends MenuData> {
   /** Menu name to create session for */
@@ -54,13 +54,15 @@ export class MenuManager {
   /**
    * Validate menu definition based on type
    */
-  private validateMenu<Data extends MenuData>(menu: MenuDefinition<Data>): void {
+  private validateMenu<Data extends MenuData>(
+    menu: MenuDefinition<Data>
+  ): void {
     if (!menu.createKey) {
       throw new Error(`Menu "${menu.name}" must have a createKey function`)
     }
 
     switch (menu.type) {
-      case "pagination":
+      case "pagination": {
         const paginationMenu = menu as PaginationMenuDefinition<Data>
         if (!paginationMenu.perPage) {
           throw new Error(`Pagination menu "${menu.name}" must have perPage`)
@@ -69,31 +71,30 @@ export class MenuManager {
           throw new Error(`Pagination menu "${menu.name}" must have renderItem`)
         }
         break
+      }
 
-      case "single":
+      case "single": {
         const singleMenu = menu as SinglePageMenuDefinition<Data>
         if (!singleMenu.renderBody) {
-          throw new Error(`Single page menu "${menu.name}" must have renderBody`)
+          throw new Error(
+            `Single page menu "${menu.name}" must have renderBody`
+          )
         }
         break
+      }
 
       default:
         throw new Error(`Unknown menu: ${menu}`)
     }
   }
 
- /**
+  /**
    * Create a new menu session
    */
   public async createSession<Data extends MenuData>(
     options: CreateSessionOptions<Data>
   ): Promise<BaseMenu<Data>> {
-    const {
-      menu: menuName,
-      params,
-      interaction,
-      preloadAll
-    } = options
+    const { menu: menuName, params, interaction, preloadAll } = options
     const userId = interaction.user.id
 
     const definition = this.menus.get(menuName)
@@ -250,8 +251,13 @@ export class MenuManager {
 
   public getMenu<Data extends MenuData>(
     menuName: string
-  ): MenuDefinition<Data> | undefined {
-    return this.menus.get(menuName)
+  ): MenuDefinition<Data> {
+    const menu = this.menus.get(menuName)
+    if (!menu) {
+      throw new Error(`Menu "${menuName}" not found. Did you register it?`)
+    }
+
+    return menu
   }
 
   /**
@@ -265,7 +271,6 @@ export class MenuManager {
     const timer = setTimeout(() => this.endSession(sessionId), ttl)
     this.sessionTimers.set(sessionId, timer)
   }
-
 }
 
 export const menuManager = new MenuManager()

@@ -4,8 +4,10 @@ import { MenuPlugin } from "./plugin"
 import type { MenuPluginUserOptions } from "./types"
 
 export * from "./manager"
+export * from "./menu-queue"
 export * from "./menus/pagination"
 export * from "./plugin"
+export * from "./queue/memory-driver"
 export * from "./types"
 
 export function menu(options?: MenuPluginUserOptions) {

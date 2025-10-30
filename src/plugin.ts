@@ -77,7 +77,7 @@ export class MenuPlugin extends RuntimePlugin<MenuPluginOptions> {
       return
     }
 
-    if (!interaction.isButton() && !interaction.isStringSelectMenu()) {
+    if (!interaction.isButton() && !interaction.isAnySelectMenu()) {
       return
     }
 

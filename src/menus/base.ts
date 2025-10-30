@@ -10,7 +10,8 @@ import {
   resolveColor,
   type StringSelectMenuInteraction,
   type TextChannel,
-  WebhookClient
+  WebhookClient,
+  AnySelectMenuInteraction
 } from "discord.js"
 import { INTERNAL_ACTION_PREFIX, RESERVED_ACTIONS } from "../constants"
 import { getPluginConfig } from "../plugin"
@@ -35,8 +36,8 @@ export abstract class BaseMenu<Data extends MenuData> {
 
   protected creatorId: string // User who created the session
 
-  // User session tracking
-  protected userSessions = new Map<string, UserSession>() // userId -> session info
+  // User session tracking (userId -> session info)
+  protected userSessions = new Map<string, UserSession>()
 
   // Action registry
   protected actions = new Map<string, ActionHandler<Data>>()
@@ -90,7 +91,7 @@ export abstract class BaseMenu<Data extends MenuData> {
   /**
    * Add a user session
    */
-  async addUserSession(userSession: UserSession): Promise<void> {
+  public async addUserSession(userSession: UserSession): Promise<void> {
     this.userSessions.set(userSession.userId, userSession)
   }
 
@@ -150,24 +151,6 @@ export abstract class BaseMenu<Data extends MenuData> {
   }
 
   /**
-   * Get user's current page
-   */
-  public getUserPage(userId: string): number {
-    const session = this.userSessions.get(userId)
-    return session?.currentPage ?? 0
-  }
-
-  /**
-   * Set user's current page
-   */
-  public setUserPage(userId: string, page: number): void {
-    const session = this.userSessions.get(userId)
-    if (session) {
-      session.currentPage = page
-    }
-  }
-
-  /**
    * Broadcast update to all users with this menu open
    */
   public async broadcastUpdate(): Promise<void> {
@@ -185,40 +168,6 @@ export abstract class BaseMenu<Data extends MenuData> {
 
     await Promise.all(updatePromises)
   }
-
-  /**
-   * Update a specific user's message
-   */
-  // public async updateUserMessage(
-  //   client: Client,
-  //   userId: string
-  // ): Promise<void> {
-  //   const userSession = this.userSessions.get(userId)
-
-  //   if (!userSession || !userSession.messageId) {
-  //     return
-  //   }
-
-  //   try {
-  //     const channel = (await client.channels.fetch(
-  //       userSession.channelId
-  //     )) as TextChannel
-  //     if (!channel?.isTextBased()) {
-  //       return
-  //     }
-
-  //     const message = await channel.messages.fetch(userSession.messageId)
-
-  //     // Render the page for this specific user
-  //     const page = await this.renderForUser(userId)
-
-  //     await message.edit({
-  //       components: [page]
-  //     })
-  //   } catch (error) {
-  //     Logger.error(`Failed to update message for user ${userId}: ${error}`)
-  //   }
-  // }
 
   /**
    * Update message context after interaction reply
@@ -430,6 +379,16 @@ export abstract class BaseMenu<Data extends MenuData> {
     return null
   }
 
+  protected async renderFooter(): Promise<APIComponentInContainer[] | null> {
+    if (this.definition.renderFooter) {
+      const ctx = this.createSessionContext()
+      const title = await this.definition.renderFooter(ctx)
+
+      return this.handleComponentOrFragment(title)
+    }
+    return null
+  }
+
   protected handleComponentOrFragment(
     component: ContainerComponentOrFragment
   ): APIComponentInContainer[] {
@@ -450,7 +409,7 @@ export abstract class BaseMenu<Data extends MenuData> {
     if (RESERVED_ACTIONS.has(actionName)) {
       throw new Error(
         `Cannot register action "${actionName}": this name is reserved for navigation. ` +
-          `Reserved names: ${Array.from(RESERVED_ACTIONS).join(", ")}`
+        `Reserved names: ${Array.from(RESERVED_ACTIONS).join(", ")}`
       )
     }
 
@@ -487,10 +446,10 @@ export abstract class BaseMenu<Data extends MenuData> {
       }
     }
 
-    // It's a user action - check for item index
+    // It's a user action, check for an item index (we always append to last part)
     if (action.includes("|")) {
-      const [actionName, indexStr] = action.split("|")
-      const itemIndex = parseInt(indexStr, 10)
+      const [actionName, ...rest] = action.split("|")
+      const itemIndex = parseInt(rest[rest.length - 1], 10)
 
       if (isNaN(itemIndex)) {
         return null
@@ -507,19 +466,6 @@ export abstract class BaseMenu<Data extends MenuData> {
       type: "user",
       action: action
     }
-  }
-
-  /**
-   * Hijack a component's custom ID to add session info
-   */
-  protected hijackComponentId(component: any, actionName: string): any {
-    const customId = this.createActionId(actionName)
-
-    if ("setCustomId" in component) {
-      return component.setCustomId(customId)
-    }
-
-    return component
   }
 
   // Session management
@@ -543,7 +489,7 @@ export abstract class BaseMenu<Data extends MenuData> {
     return this.definition.sessionOptions?.ttl
   }
 
-  async destroy(): Promise<void> {
+  public async destroy(): Promise<void> {
     if (this.definition.onSessionEnd) {
       await this.definition.onSessionEnd({
         params: this.params,
@@ -555,9 +501,9 @@ export abstract class BaseMenu<Data extends MenuData> {
 
   // Abstract methods
   public abstract render(): Promise<ContainerBuilder>
-  abstract renderForUser(userId: string): Promise<ContainerBuilder>
+  public abstract renderForUser(userId: string): Promise<ContainerBuilder>
   public abstract handleInteraction(
-    interaction: ButtonInteraction | StringSelectMenuInteraction,
+    interaction: ButtonInteraction | AnySelectMenuInteraction,
     action: string
   ): Promise<ContainerBuilder | null>
 }

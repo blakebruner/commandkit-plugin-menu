@@ -19,7 +19,6 @@ export const INTERNAL_ACTION_PREFIX = "__nav__"
 
 export const PLUGIN_DEFAULTS: MenuPluginOptions = {
   actionPrefix: "page",
-  preloadAll: false,
   navigation: {
     first: {
       emoji: "⏪",

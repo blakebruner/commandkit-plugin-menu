@@ -57,9 +57,6 @@ export class MenuManager {
   private validateMenu<Data extends MenuData>(
     menu: MenuDefinition<Data>
   ): void {
-    if (!menu.createKey) {
-      throw new Error(`Menu "${menu.name}" must have a createKey function`)
-    }
 
     switch (menu.type) {
       case "pagination": {
@@ -138,7 +135,6 @@ export class MenuManager {
     }
 
     // Create new menu based on type
-    const config = getPluginConfig()
     let menu: BaseMenu<Data>
 
     switch (definition.type) {
@@ -148,9 +144,6 @@ export class MenuManager {
           contextKey,
           params,
           userId,
-          {
-            preloadAll: preloadAll ?? config.preloadAll
-          }
         )
         break
 
@@ -249,6 +242,9 @@ export class MenuManager {
     return this.menus.has(menuName)
   }
 
+  /**
+   * Get a registered menu definition
+   */
   public getMenu<Data extends MenuData>(
     menuName: string
   ): MenuDefinition<Data> {

@@ -23,14 +23,6 @@ import type {
 import { transformComponentCustomId } from "../utils"
 import { BaseMenu } from "./base"
 
-export interface PaginationRenderOptions {
-  /**
-   * Whether to preload all pages on first render
-   * @default false (lazy load)
-   */
-  preloadAll?: boolean
-}
-
 export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   protected override definition: PaginationMenuDefinition<Data>
 
@@ -41,19 +33,39 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   // Cache of fully-built pages (ContainerBuilders)
   private pageCache = new Map<number, ContainerBuilder>()
 
-  // Render options
-  private renderOptions: PaginationRenderOptions
-
   constructor(
     definition: PaginationMenuDefinition<Data>,
     sessionId: string,
     params: MenuParams<Data>,
     creatorId: string,
-    options?: PaginationRenderOptions
   ) {
     super(definition, sessionId, params, creatorId)
     this.definition = definition
-    this.renderOptions = options ?? {}
+  }
+
+  /**
+   * Get user's current page
+   */
+  public getUserPage(userId: string): number {
+    const session = this.userSessions.get(userId)
+    return session?.currentPage ?? 0
+  }
+
+  /**
+   * Set user's current page
+   */
+  public setUserPage(userId: string, page: number): void {
+    const session = this.userSessions.get(userId)
+    if (session) {
+      session.currentPage = page
+    }
+  }
+
+  /**
+   * Get total number of pages
+   */
+  public getPageCount(): number {
+    return this.pageCount
   }
 
   /**
@@ -67,7 +79,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Render for a specific user (uses their page position)
    */
-  async renderForUser(userId: string): Promise<ContainerBuilder> {
+  public async renderForUser(userId: string): Promise<ContainerBuilder> {
     return this.getPageForUser(userId)
   }
 
@@ -99,7 +111,6 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   private async buildPage(pageNumber: number): Promise<ContainerBuilder> {
     const comps: APIComponentInContainer[] = []
 
-    // Add title if defined
     const title = await this.renderTitle()
     if (title) {
       comps.push(...title)
@@ -138,6 +149,11 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
         )
       })
       comps.push(...transformedComponents)
+    }
+
+    const footer = await this.renderFooter()
+    if (footer) {
+      comps.push(...footer)
     }
 
     // Add navigation controls
@@ -267,14 +283,14 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Initial render - fetches data and renders first page
    */
-  async render(): Promise<ContainerBuilder> {
+  public async render(): Promise<ContainerBuilder> {
     await this.initialize()
 
     this.items = await this.definition.fetch(this.params)
     this.calculatePageCount()
     this.clearPageCache()
 
-    if (this.renderOptions.preloadAll) {
+    if (this.definition.preloadAll) {
       await this.preloadAllPages()
     }
 
@@ -285,7 +301,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Navigate to a specific page for a user
    */
-  async goToPage(
+  public async goToPage(
     userId: string,
     pageNumber: number
   ): Promise<ContainerBuilder> {
@@ -300,7 +316,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Navigate to next page for a user
    */
-  async nextPage(userId: string): Promise<ContainerBuilder | null> {
+  public async nextPage(userId: string): Promise<ContainerBuilder | null> {
     const currentPage = this.getUserPage(userId)
 
     if (currentPage >= this.pageCount - 1) {
@@ -314,7 +330,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Navigate to previous page for a user
    */
-  async previousPage(userId: string): Promise<ContainerBuilder | null> {
+  public async previousPage(userId: string): Promise<ContainerBuilder | null> {
     const currentPage = this.getUserPage(userId)
 
     if (currentPage <= 0) {
@@ -328,7 +344,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Navigate to first page for a user
    */
-  async firstPage(userId: string): Promise<ContainerBuilder> {
+  public async firstPage(userId: string): Promise<ContainerBuilder> {
     this.setUserPage(userId, 0)
     return this.getPage(0)
   }
@@ -336,7 +352,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Navigate to last page for a user
    */
-  async lastPage(userId: string): Promise<ContainerBuilder> {
+  public async lastPage(userId: string): Promise<ContainerBuilder> {
     const lastPage = this.pageCount - 1
     this.setUserPage(userId, lastPage)
     return this.getPage(lastPage)
@@ -345,7 +361,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Refetch data and update all users
    */
-  async refetch(items?: boolean): Promise<void> {
+  public async refetch(items?: boolean): Promise<void> {
     // Refetch items if requested
     if (items) {
       this.items = await this.definition.fetch(this.params)
@@ -360,7 +376,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
       }
     }
 
-    if (this.renderOptions.preloadAll) {
+    if (this.definition.preloadAll) {
       await this.preloadAllPages()
     }
 
@@ -371,7 +387,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Handle button interactions
    */
-  async handleInteraction(
+  public async handleInteraction(
     interaction: ButtonInteraction | StringSelectMenuInteraction,
     actionRaw: string
   ): Promise<ContainerBuilder | null> {
@@ -381,7 +397,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
       Logger.warn(
         `User ${userId} attempted to interact with session ${this.sessionId} without permission.`
       )
-      return null // User cannot interact with this session
+      return null
     }
 
     const parsed = this.parseActionId(actionRaw)
@@ -453,7 +469,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
   /**
    * Get items for a specific user's current page
    */
-  getCurrentPageItemsForUser(userId: string): MenuItem<Data>[] {
+  public getCurrentPageItemsForUser(userId: string): MenuItem<Data>[] {
     const currentPage = this.getUserPage(userId)
     const startIdx = currentPage * this.definition.perPage
     const endIdx = Math.min(
@@ -463,12 +479,6 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
     return this.items.slice(startIdx, endIdx)
   }
 
-  /**
-   * Get total number of pages
-   */
-  getPageCount(): number {
-    return this.pageCount
-  }
 }
 
 /**

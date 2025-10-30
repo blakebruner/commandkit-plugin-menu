@@ -1,29 +1,12 @@
 import { Logger } from "commandkit"
 import { menuManager } from "./manager"
 import type {
+  MenuCloseMessage,
   MenuData,
   MenuUpdateMessage,
   QueueDriver,
   QueueUpdateOptions
 } from "./types"
-
-export interface MenuActionMessage {
-  sessionId: string
-  customId: string
-  userId: string
-  channelId: string
-  messageId: string
-  interactionToken: string
-  interactionId: string
-  ephemeral: boolean
-  data?: any
-  timestamp: number
-}
-
-export interface MenuCloseMessage {
-  contextKey: string
-  reason?: string
-}
 
 export class MenuQueue {
   public queue: QueueDriver | null = null
@@ -37,17 +20,11 @@ export class MenuQueue {
     if (!this.queue) {
       throw new Error("Queue driver not set")
     }
-    // Handle menu update messages
+
     this.queue.subscribe<MenuUpdateMessage>("menu:update", async message => {
       await this.handleMenuUpdate(message)
     })
 
-    // Handle menu action messages
-    // this.queue.subscribe<MenuActionMessage>("menu:action", async message => {
-    //   await this.handleAction(message)
-    // })
-
-    // Handle menu close messages
     this.queue.subscribe<MenuCloseMessage>("menu:close", async message => {
       await this.handleClose(message)
     })
@@ -65,10 +42,6 @@ export class MenuQueue {
 
       // Get or restore session
       const menu = menuManager.getSession(contextKey)
-
-      // if (!menu && this.storage) {
-      //   menu = await this.restoreSession(contextKey)
-      // }
 
       if (!menu) {
         Logger.warn(`Menu session not found: ${contextKey}`)
@@ -104,17 +77,6 @@ export class MenuQueue {
       // refetch calls broadcastUpdate internally
       // await menu.broadcastUpdate()
 
-      // Update specific user or all users
-      // if (userId) {
-      //   await menu.updateUserMessage(this.client, userId)
-      // } else {
-      //   await menu.broadcastUpdate(this.client)
-      // }
-
-      // Save updated state
-      // if (this.storage) {
-      //   await this.storage.saveSession(contextKey, menu.serialize())
-      // }
     } catch (error) {
       Logger.error(`Error handling menu update: ${error}`)
     }

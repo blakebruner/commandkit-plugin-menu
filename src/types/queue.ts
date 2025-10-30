@@ -53,3 +53,21 @@ export interface MenuUpdateMessage {
   updateSessionData?: any
   timestamp: number
 }
+
+export interface MenuActionMessage {
+  sessionId: string
+  customId: string
+  userId: string
+  channelId: string
+  messageId: string
+  interactionToken: string
+  interactionId: string
+  ephemeral: boolean
+  data?: any
+  timestamp: number
+}
+
+export interface MenuCloseMessage {
+  contextKey: string
+  reason?: string
+}

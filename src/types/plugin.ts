@@ -24,7 +24,6 @@ export type PageNavigationType = keyof PageNavigation
 
 export interface MenuPluginOptions {
   actionPrefix: string
-  preloadAll: boolean
   navigation: PageNavigation
 }
 

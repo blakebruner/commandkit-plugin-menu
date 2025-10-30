@@ -67,6 +67,11 @@ export interface BaseMenuDefinition<Data extends MenuData> {
     ctx: SessionContext<Data>
   ) => Awaitable<ContainerComponentOrFragment>
 
+  /** Render the menu footer (placed above navigation, if applicable) */
+  renderFooter?: (
+    ctx: SessionContext<Data>
+  ) => Awaitable<ContainerComponentOrFragment>
+
   /**
    * Define custom actions for this menu
    * Action names should be simple strings (e.g., 'delete', 'favorite', 'edit')
@@ -102,6 +107,12 @@ export interface PaginationMenuDefinition<Data extends MenuData>
 
   /** Number of items to display per page */
   perPage: number
+
+  /**
+   * Whether to preload all pages on first render
+   * @default false (lazy load)
+   */
+  preloadAll?: boolean
 
   /** Fetch all items for pagination */
   fetch: (params: MenuParams<Data>) => Awaitable<MenuItem<Data>[]>

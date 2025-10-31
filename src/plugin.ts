@@ -13,6 +13,7 @@ import { Events, type Interaction } from "discord.js"
 import { PLUGIN_DEFAULTS } from "./constants"
 import { menuManager } from "./manager"
 import type { MenuPluginOptions } from "./types"
+import { menuRegistry } from "./registry"
 
 let pluginConfig: MenuPluginOptions = PLUGIN_DEFAULTS
 
@@ -57,7 +58,7 @@ export class MenuPlugin extends RuntimePlugin<MenuPluginOptions> {
         continue
       }
 
-      menuManager.register(page)
+      menuRegistry.register(page)
     }
 
     Logger.info(`${this.name} activated`)

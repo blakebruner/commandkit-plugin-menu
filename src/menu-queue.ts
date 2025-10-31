@@ -7,6 +7,7 @@ import type {
   QueueDriver,
   QueueUpdateOptions
 } from "./types"
+import { menuRegistry } from "./registry"
 
 export class MenuQueue {
   public queue: QueueDriver | null = null
@@ -38,7 +39,7 @@ export class MenuQueue {
       const { menuName, contextKey, refresh, updateSessionData } = message
 
       // Get menu definition
-      const definition = menuManager.getMenu(menuName)
+      const definition = menuRegistry.get(menuName)
 
       // Get or restore session
       const menu = menuManager.getSession(contextKey)
@@ -103,7 +104,7 @@ export class MenuQueue {
     const { menu: menuName, params, refresh, updateSessionData } = options
 
     // Get menu definition
-    const definition = menuManager.getMenu(menuName)
+    const definition = menuRegistry.get(menuName)
 
     // Generate context key from params
     const contextKey = await definition.createKey(params)

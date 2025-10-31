@@ -18,7 +18,7 @@ export const RESERVED_ACTIONS = new Set([
 export const INTERNAL_ACTION_PREFIX = "__nav__"
 
 export const PLUGIN_DEFAULTS: MenuPluginOptions = {
-  actionPrefix: "page",
+  actionPrefix: "menu",
   navigation: {
     first: {
       emoji: "⏪",
@@ -35,6 +35,11 @@ export const PLUGIN_DEFAULTS: MenuPluginOptions = {
     last: {
       emoji: "⏩",
       style: ButtonStyle.Primary
-    }
+    },
+    goto: {
+      /** Placeholder for string select, replaces for actual values */
+      placeholder: "🔄 Jump to page (%page% / %pageMax%)",
+      optionLabel: "Page %page%"
+    },
   }
 } as const

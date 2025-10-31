@@ -8,7 +8,6 @@ import {
   type InteractionResponse,
   type RGBTuple,
   resolveColor,
-  type StringSelectMenuInteraction,
   type TextChannel,
   WebhookClient,
   AnySelectMenuInteraction

@@ -13,11 +13,17 @@ export interface PageNavigationButtonOptions {
   emoji?: string
 }
 
+export interface PageNavigationSelectOptions {
+  placeholder: string
+  optionLabel: string
+}
+
 export interface PageNavigation {
   first: PageNavigationButtonOptions
   previous: PageNavigationButtonOptions
   next: PageNavigationButtonOptions
   last: PageNavigationButtonOptions
+  goto: PageNavigationSelectOptions
 }
 
 export type PageNavigationType = keyof PageNavigation

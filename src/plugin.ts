@@ -86,7 +86,7 @@ export class MenuPlugin extends RuntimePlugin<MenuPluginOptions> {
       return
     }
 
-    const session = menuManager.getSession<any>(sessionKey)
+    const session = menuManager.getSession(sessionKey)
     if (!session) {
       Logger.warn(`Session not found: ${sessionKey}`)
       return

@@ -17,6 +17,7 @@ import type {
   MenuItem,
   MenuParams,
   MenuPluginOptions,
+  PageNavigationButtonOptions,
   PageNavigationType,
   PaginationMenuDefinition
 } from "../types"
@@ -193,7 +194,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
       .toJSON()
 
     const selectMenuNavigation = new ActionRowBuilder()
-      .addComponents(this.buildNavigationSelectMenu(pageNumber))
+      .addComponents(this.buildNavigationSelectMenu(config, pageNumber))
       .toJSON()
 
     return [buttonNavigation, selectMenuNavigation] as APIComponentInContainer[]
@@ -204,7 +205,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
     action: PageNavigationType,
     disabled: boolean
   ): ButtonBuilder {
-    const buttonOptions = config.navigation[action]
+    const buttonOptions = config.navigation[action] as PageNavigationButtonOptions
     const buttonId = this.createNavigationActionId(action)
     const button = new ButtonBuilder()
       .setCustomId(buttonId)
@@ -223,6 +224,7 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
 
   // select options (window around current page)
   private buildNavigationSelectMenu(
+    config: MenuPluginOptions,
     pageNumber: number
   ): StringSelectMenuBuilder {
     let start = Math.max(0, pageNumber - Math.floor(MAX_SELECT_OPTIONS / 2))
@@ -231,15 +233,21 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
       start = Math.max(0, end - MAX_SELECT_OPTIONS)
     }
 
-    // TODO: make this configurable?
     const selectId = this.createNavigationActionId("goto")
+    const selectPlaceholder = config.navigation.goto.placeholder
+      .replace("%page%", `${pageNumber + 1}`)
+      .replace("%pageMax%", `${this.pageCount}`)
     const select = new StringSelectMenuBuilder()
       .setCustomId(selectId)
-      .setPlaceholder(`🔄 Jump to page (${pageNumber + 1} / ${this.pageCount})`)
+      .setPlaceholder(selectPlaceholder)
 
     for (let i = start; i < end; i++) {
+      const selectLabel = config.navigation.goto.optionLabel.replace(
+        "%page%",
+        `${i + 1}`
+      )
       const selectOption = new StringSelectMenuOptionBuilder()
-        .setLabel(`Page ${i + 1}`)
+        .setLabel(selectLabel)
         .setValue(`${i}`)
 
       select.addOptions(selectOption)
@@ -252,8 +260,9 @@ export class PaginationMenu<Data extends MenuData> extends BaseMenu<Data> {
    * Get a page, using cache if available, otherwise build it
    */
   private async getPage(pageNumber: number): Promise<ContainerBuilder> {
-    if (this.pageCache.has(pageNumber)) {
-      return this.pageCache.get(pageNumber)!
+    const pageCached = this.pageCache.get(pageNumber)
+    if (pageCached) {
+      return pageCached
     }
 
     const page = await this.buildPage(pageNumber)

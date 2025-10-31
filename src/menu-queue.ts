@@ -93,7 +93,7 @@ export class MenuQueue {
   /**
    * Queue a menu update with fine-grained control
    */
-  async sendUpdate<Data extends MenuData>(
+  public async sendUpdate<Data extends MenuData>(
     options: QueueUpdateOptions<Data>
   ): Promise<void> {
     if (!this.queue) {

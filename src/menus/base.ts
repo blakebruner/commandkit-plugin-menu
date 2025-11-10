@@ -381,9 +381,9 @@ export abstract class BaseMenu<Data extends MenuData> {
   protected async renderFooter(): Promise<APIComponentInContainer[] | null> {
     if (this.definition.renderFooter) {
       const ctx = this.createSessionContext()
-      const title = await this.definition.renderFooter(ctx)
+      const footer = await this.definition.renderFooter(ctx)
 
-      return this.handleComponentOrFragment(title)
+      return this.handleComponentOrFragment(footer)
     }
     return null
   }

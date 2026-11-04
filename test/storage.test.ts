@@ -148,6 +148,13 @@ describe("sqlite persistence", () => {
     await second.close()
   })
 
+  it("creates missing folders for a new database file", async () => {
+    const file = path.join(tmp, "nested", "dir", "menus.db")
+    const storage = await SqliteMenuStorage.open(file)
+    await storage.save(view())
+    await storage.close()
+  })
+
   it("rejects unsafe table names", () => {
     expect(
       () => new SqliteMenuStorage(new DatabaseSync(":memory:"), { table: "x; drop" })

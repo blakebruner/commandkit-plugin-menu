@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs"
+import { dirname, resolve } from "node:path"
 import type { ViewRecord } from "../types"
 import type { MenuStorage } from "./types"
 
@@ -143,13 +145,17 @@ export class SqliteMenuStorage implements MenuStorage {
 }
 
 async function openBuiltinSqlite(path: string): Promise<SqliteDatabaseLike> {
+  if (path !== ":memory:" && !path.startsWith("file:")) {
+    // like most SQLite tools, create the folder for a new database file
+    mkdirSync(dirname(resolve(path)), { recursive: true })
+  }
   if (typeof process !== "undefined" && process.versions?.bun) {
     const mod: any = await import("bun:sqlite" as string)
     return new mod.Database(path, { create: true }) as SqliteDatabaseLike
   }
+  let mod: any
   try {
-    const mod: any = await import("node:sqlite" as string)
-    return new mod.DatabaseSync(path) as SqliteDatabaseLike
+    mod = await import("node:sqlite" as string)
   } catch (error) {
     throw new Error(
       "No built-in SQLite found (needs Bun or Node 22.5+). Install better-sqlite3 and pass " +
@@ -157,6 +163,7 @@ async function openBuiltinSqlite(path: string): Promise<SqliteDatabaseLike> {
       { cause: error }
     )
   }
+  return new mod.DatabaseSync(path) as SqliteDatabaseLike
 }
 
 function parse(row: Row | null | undefined): ViewRecord | null {

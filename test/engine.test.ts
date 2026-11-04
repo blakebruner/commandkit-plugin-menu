@@ -149,6 +149,8 @@ describe("clicks", () => {
 
     expect(click.calls.map((c: any) => c.method)).toEqual(["update"])
     expect(texts(click.calls[0].payload.components)).toContain("claimed: staff-1")
+    // A render without files must clear the previous render's files.
+    expect(click.calls[0].payload.attachments).toEqual([])
   })
 
   it("ignores interactions that aren't menu buttons", async () => {

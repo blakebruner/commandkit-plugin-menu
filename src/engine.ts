@@ -1074,6 +1074,8 @@ function interactionPayload(rendered: RenderedMenu) {
   return {
     components: rendered.components as any[],
     files: rendered.files.length ? (rendered.files as any[]) : undefined,
+    // Drop the previous render's files; this render's `files` are added on top.
+    attachments: [],
     allowedMentions: rendered.allowedMentions
   }
 }

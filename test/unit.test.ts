@@ -10,6 +10,7 @@ import {
 import { describe, expect, it } from "vitest"
 import { decodeCustomId, encodeCustomId, validateActionName } from "../src/custom-id"
 import { disableComponents, normalizeOutput, validateCustomIds } from "../src/render"
+import { messageBody } from "../src/transport"
 import { assertSerializable, stableStringify } from "../src/utils"
 
 describe("custom ids", () => {
@@ -121,6 +122,19 @@ describe("render output", () => {
     expect(container.components[1].components[1].disabled).toBe(true)
     // original untouched
     expect((components[0]!.components[0] as any).accessory.disabled).toBeUndefined()
+  })
+})
+
+describe("message bodies", () => {
+  const menu = normalizeOutput([{ type: 10, content: "hi" }])
+
+  it("lists no attachments when there are no files, so edits drop old ones", () => {
+    expect(messageBody(menu, []).attachments).toEqual([])
+  })
+
+  it("lists each file as an attachment", () => {
+    const files = [{ name: "card.png", data: Buffer.from("x") }]
+    expect(messageBody(menu, files).attachments).toEqual([{ id: 0, filename: "card.png" }])
   })
 })
 

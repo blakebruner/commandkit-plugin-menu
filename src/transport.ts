@@ -57,16 +57,15 @@ function route(target: MessageTarget) {
     : Routes.webhookMessage(target.applicationId, target.token, target.messageId)
 }
 
-function messageBody(menu: RenderedMenu, files: RawFile[]) {
-  const body: Record<string, unknown> = {
+/** @internal exported for tests */
+export function messageBody(menu: RenderedMenu, files: RawFile[]) {
+  return {
     components: menu.components,
     flags: MessageFlags.IsComponentsV2,
-    allowed_mentions: allowedMentionsToAPI(menu.allowedMentions)
+    allowed_mentions: allowedMentionsToAPI(menu.allowedMentions),
+    // Always listed, so an edit without files drops the previous render's files instead of keeping them.
+    attachments: files.map((file, id) => ({ id, filename: file.name }))
   }
-  if (files.length) {
-    body.attachments = files.map((file, id) => ({ id, filename: file.name }))
-  }
-  return body
 }
 
 export function allowedMentionsToAPI(mentions: MessageMentionOptions) {

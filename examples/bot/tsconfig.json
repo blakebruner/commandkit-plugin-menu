@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "commandkit",
+    "types": ["node"],
+    "baseUrl": ".",
+    "typeRoots": ["../../node_modules/@types"],
+    "paths": {
+      "commandkit-plugin-menu": ["../../src/index.ts"],
+      "commandkit": ["../../node_modules/commandkit"],
+      "commandkit/*": ["../../node_modules/commandkit/*"],
+      "discord.js": ["../../node_modules/discord.js"]
+    }
+  },
+  "include": ["src", "commandkit.config.ts"]
+}

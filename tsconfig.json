@@ -1,14 +1,19 @@
 {
   "compilerOptions": {
-    "outDir": "dist",
-    "target": "ES2020",
-    "module": "node16",
-    "moduleResolution": "node16",
-    "declaration": true,
-    "inlineSourceMap": true,
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Node",
     "strict": true,
-    "skipLibCheck": true
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "declaration": true,
+    "noEmit": true,
+    "types": ["node"]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src", "test", "tsup.config.ts", "vitest.config.ts"]
 }

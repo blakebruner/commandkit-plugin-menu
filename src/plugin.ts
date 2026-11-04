@@ -2,108 +2,184 @@ import { existsSync } from "node:fs"
 import { readdir } from "node:fs/promises"
 import path from "node:path"
 import {
-  type CommandKitEventDispatch,
+  type CommandKitHMREvent,
   type CommandKitPluginRuntime,
   getCurrentDirectory,
-  Logger,
   RuntimePlugin,
   toFileURL
 } from "commandkit"
-import { Events, type Interaction } from "discord.js"
-import { PLUGIN_DEFAULTS } from "./constants"
-import { menuManager } from "./manager"
-import type { MenuPluginOptions } from "./types"
-import { menuRegistry } from "./registry"
+import { type Awaitable, type Client, Events, type Interaction } from "discord.js"
+import { isMenuDefinition, type MenuDefinitionBase } from "./definition"
+import { getMenuEngine, type MenuEngineOptions } from "./engine"
+import { log } from "./logger"
+import type { MenuStorage } from "./storage/types"
+import { globalSingleton } from "./utils"
 
-let pluginConfig: MenuPluginOptions = PLUGIN_DEFAULTS
+export interface MenuPluginOptions
+  extends Partial<Omit<MenuEngineOptions, "ttl" | "messages" | "navigation">> {
+  /**
+   * Where views are stored. Use `RedisMenuStorage` or `SqliteMenuStorage` so menus survive restarts.
+   * A function is called once when the plugin activates (so the config file can stay side-effect free).
+   * You can also call `setMenuStorage()` from your app instead.
+   */
+  storage?: MenuStorage | (() => Awaitable<MenuStorage>)
+  /** Folder (inside `src/app`) to load menus from. Default `"menus"`. */
+  directory?: string
+  /** Re-render every live view of every menu when the bot starts. Default `false`. */
+  resyncOnStart?: boolean
+  ttl?: Partial<MenuEngineOptions["ttl"]>
+  messages?: Partial<MenuEngineOptions["messages"]>
+  navigation?: Partial<MenuEngineOptions["navigation"]>
+}
 
-export function getPluginConfig(): MenuPluginOptions {
-  return pluginConfig
+const storageState = globalSingleton("storage-state", () => ({ configured: false }))
+
+/** Use a storage driver from your own code (e.g. `src/app.ts`), sharing your existing connection. */
+export function setMenuStorage(storage: MenuStorage): void {
+  storageState.configured = true
+  getMenuEngine().setStorage(storage)
+}
+
+/** Register a menu that doesn't live in `src/app/menus`. Do this at startup so old buttons work. */
+export function registerMenu(menu: MenuDefinitionBase): void {
+  getMenuEngine().register(menu)
 }
 
 export class MenuPlugin extends RuntimePlugin<MenuPluginOptions> {
   public readonly name = "MenuPlugin"
 
-  public constructor(options: MenuPluginOptions) {
-    super(options)
-    pluginConfig = options
-  }
+  /** Menu names loaded from each file, so HMR can drop menus whose file changed or was deleted. */
+  private fileMenus = new Map<string, string[]>()
+  private client: Client | null = null
+  private listeners: Array<[string, (...args: any[]) => void]> = []
 
-  public async activate(): Promise<void> {
-    const pageDirectory = this.getPageDirectory()
-    if (!existsSync(pageDirectory)) {
-      return
+  public override async activate(ctx: CommandKitPluginRuntime): Promise<void> {
+    const engine = getMenuEngine()
+    const { storage, directory: _directory, resyncOnStart: _resync, ...options } = this.options
+    engine.configure(options as Partial<MenuEngineOptions>)
+
+    if (storage) {
+      setMenuStorage(typeof storage === "function" ? await storage() : storage)
+    } else if (!storageState.configured && process.env.NODE_ENV === "production") {
+      log.warn(
+        "No storage configured, so menus are kept in memory and stop working after a restart. " +
+          "Pass `storage` to menu() (RedisMenuStorage or SqliteMenuStorage)."
+      )
     }
 
-    const files = await readdir(pageDirectory, { withFileTypes: true })
-    for (const f of files) {
-      if (
-        f.isDirectory() ||
-        f.name.startsWith("_") ||
-        !/\.(c|m)?(j|t)sx?$/.test(f.name)
-      ) {
-        continue
-      }
-
-      const pagePath = path.join(f.parentPath, f.name)
-      const page = await import(toFileURL(pagePath, true))
-        .then(m => m.default || m.page)
-        .catch(e => {
-          Logger.error(`Error loading menu file: ${e?.stack ?? e}`)
-          return null
-        })
-
-      if (!page || !page.name) {
-        Logger.error(`Invalid menu definition in file: ${f.name}`)
-        continue
-      }
-
-      menuRegistry.register(page)
-    }
-
-    Logger.info(`${this.name} activated`)
+    this.client = ctx.commandkit.client
+    engine.attachClient(this.client)
+    this.attachListeners(this.client)
+    await this.loadMenus()
+    engine.startSweeper()
+    log.info(`Menu plugin active with ${engine.menus.size} menu(s)`)
   }
 
-  public async willEmitEvent(
-    ctx: CommandKitPluginRuntime,
-    event: CommandKitEventDispatch
+  public override async deactivate(): Promise<void> {
+    for (const [event, listener] of this.listeners) this.client?.off(event, listener)
+    this.listeners = []
+    await getMenuEngine().shutdown()
+  }
+
+  public override async onBeforeInteraction(
+    _ctx: CommandKitPluginRuntime,
+    interaction: Interaction
   ): Promise<void> {
-    if (event.name !== Events.InteractionCreate) {
-      return
-    }
+    await getMenuEngine().handleInteraction(interaction)
+  }
 
-    // TODO: how to guard this better? another plugin can push args
-    const interaction = event.args[0] as Interaction | undefined
-    if (!interaction || !interaction.isMessageComponent()) {
-      return
-    }
+  public override async onAfterClientLogin(): Promise<void> {
+    const engine = getMenuEngine()
+    const names = this.options.resyncOnStart ? [...engine.menus.keys()] : undefined
+    void engine.resync(names)
+  }
 
-    if (!interaction.isButton() && !interaction.isAnySelectMenu()) {
-      return
-    }
-
-    const [prefix, sessionKey, action] = interaction.customId.split(":")
-    if (prefix !== this.options.actionPrefix) {
-      return
-    }
-
-    const session = menuManager.getSession(sessionKey)
-    if (!session) {
-      Logger.warn(`Session not found: ${sessionKey}`)
-      return
-    }
-
-    const menu = await session.handleInteraction(interaction, action)
-    if (menu) {
-      await interaction.update({
-        components: [menu]
-      })
-    }
-
+  public override async performHMR(
+    _ctx: CommandKitPluginRuntime,
+    event: CommandKitHMREvent
+  ): Promise<void> {
+    if (event.event !== "unknown") return
+    const sourceDir = path.join(process.cwd(), "src", "app", this.directory)
+    if (!path.resolve(event.path).startsWith(sourceDir + path.sep)) return
+    event.preventDefault()
     event.accept()
+    const changed = await this.loadMenus()
+    // Push the new render to open messages so edits show up immediately while developing.
+    await getMenuEngine().resync(changed)
   }
 
-  private getPageDirectory(): string {
-    return path.join(getCurrentDirectory(), "app", "menus")
+  private get directory(): string {
+    return this.options.directory ?? "menus"
   }
+
+  /** (Re)load every menu file. Returns the names of the menus that were loaded. */
+  private async loadMenus(): Promise<string[]> {
+    const engine = getMenuEngine()
+    const root = path.join(getCurrentDirectory(), "app", this.directory)
+    for (const names of this.fileMenus.values()) for (const name of names) engine.unregister(name)
+    this.fileMenus.clear()
+    if (!existsSync(root)) return []
+
+    const loaded: string[] = []
+    for (const file of await listModules(root)) {
+      const mod = await import(toFileURL(file, true)).catch(error => {
+        log.error(`Could not load menu file ${file}: ${error?.stack ?? error}`)
+        return null
+      })
+      if (!mod) continue
+      const menus = Object.values(mod as Record<string, unknown>).filter(isMenuDefinition)
+      const names: string[] = []
+      for (const menu of new Set(menus)) {
+        if (loaded.includes(menu.name)) {
+          log.error(`Duplicate menu name "${menu.name}" in ${file}; keeping the first one`)
+          continue
+        }
+        engine.register(menu)
+        names.push(menu.name)
+        loaded.push(menu.name)
+      }
+      if (!names.length)
+        log.warn(`${file} doesn't export a menu (prefix helper files with "_" to skip them)`)
+      this.fileMenus.set(file, names)
+    }
+    return loaded
+  }
+
+  private attachListeners(client: Client) {
+    const engine = getMenuEngine()
+    const on = (event: string, listener: (...args: any[]) => void) => {
+      client.on(event, listener)
+      this.listeners.push([event, listener])
+    }
+    const safe = (fn: () => Promise<void>) => {
+      fn().catch(error => log.warn(`Menu cleanup failed: ${error?.stack ?? error}`))
+    }
+    on(Events.MessageDelete, message => safe(() => engine.handleMessageDelete(message.id)))
+    on(Events.MessageBulkDelete, messages =>
+      safe(async () => {
+        for (const id of messages.keys()) await engine.handleMessageDelete(id)
+      })
+    )
+    on(Events.ChannelDelete, channel => safe(() => engine.handleChannelDelete(channel.id)))
+    on(Events.ThreadDelete, thread => safe(() => engine.handleChannelDelete(thread.id)))
+  }
+}
+
+async function listModules(dir: string): Promise<string[]> {
+  const out: string[] = []
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith("_") || entry.name.startsWith(".")) continue
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      out.push(...(await listModules(full)))
+    } else if (/\.(c|m)?(j|t)sx?$/.test(entry.name) && !/\.d\.(c|m)?ts$/.test(entry.name)) {
+      out.push(full)
+    }
+  }
+  return out.sort()
+}
+
+/** Create the menu plugin for `commandkit.config.ts`. */
+export function menu(options: MenuPluginOptions = {}): MenuPlugin {
+  return new MenuPlugin(options)
 }

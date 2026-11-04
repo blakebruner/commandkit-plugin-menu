@@ -1,0 +1,15 @@
+{
+  "name": "menu-example-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "commandkit dev",
+    "build": "commandkit build",
+    "start": "commandkit start"
+  },
+  "dependencies": {
+    "commandkit": "^1.2.6",
+    "commandkit-plugin-menu": "file:../..",
+    "discord.js": "^14.28.0"
+  }
+}

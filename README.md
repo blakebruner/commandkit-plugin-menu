@@ -263,13 +263,17 @@ menu({
   deferAfter: 2000,        // auto-acknowledge slow actions after this many ms
   resyncOnStart: false,    // re-render every live view of every menu on startup
   messages: { expired: "...", forbidden: "...", error: "..." },
-  navigation: {            // pagination controls
-    first: { emoji: "⏪", style: ButtonStyle.Secondary },
+  navigation: {            // pagination controls: a button row, then a jump select
+    first: { emoji: "⏪", style: ButtonStyle.Primary },
     previous: { emoji: "◀️", style: ButtonStyle.Primary },
     next: { emoji: "▶️", style: ButtonStyle.Primary },
-    last: { emoji: "⏩", style: ButtonStyle.Secondary },
-    jump: "auto",          // page-jump select when there are more than 3 pages
-    indicator: "-# Page {page} of {pages}"
+    last: { emoji: "⏩", style: ButtonStyle.Primary },
+    wrap: true,            // previous on page 1 goes to the last page, next on the last to page 1
+    jump: true,            // jump select whenever there's more than one page ("auto" = more than 3)
+    jumpWindow: 20,        // the select lists this many nearby pages, centred on the current one
+    jumpPlaceholder: "🔄 Jump to a page ({page} / {pages})",
+    jumpOption: "Page {page}",
+    indicator: false       // optional small text above the buttons, e.g. "-# Page {page} of {pages}"
   }
 })
 ```

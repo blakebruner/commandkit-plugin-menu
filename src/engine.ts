@@ -48,13 +48,17 @@ export interface NavigationOptions {
   previous: NavigationButton
   next: NavigationButton
   last: NavigationButton | false
-  /** Page-jump select menu: always, never, or `"auto"` (when there are more than 3 pages). */
+  /** Previous on the first page goes to the last, and next on the last goes to the first. Default `true`. */
+  wrap: boolean
+  /** Page-jump select below the buttons: always (with more than one page), never, or `"auto"` (more than 3 pages). */
   jump: boolean | "auto"
+  /** How many pages the jump select lists, centred on the current one (max 25). Default 20. */
+  jumpWindow: number
   /** Placeholder for the jump select. `{page}` and `{pages}` are replaced. */
   jumpPlaceholder: string
   /** Option label in the jump select. `{page}` is replaced. */
   jumpOption: string
-  /** Small text above the buttons. `{page}`, `{pages}` and `{total}` are replaced. `false` hides it. */
+  /** Small text above the buttons. `{page}`, `{pages}` and `{total}` are replaced. `false` (default) hides it. */
   indicator: string | false
 }
 
@@ -100,14 +104,16 @@ export const DEFAULT_OPTIONS: MenuEngineOptions = {
     error: "Something went wrong while handling that. Please try again."
   },
   navigation: {
-    first: { emoji: "⏪", style: 2 },
+    first: { emoji: "⏪", style: 1 },
     previous: { emoji: "◀️", style: 1 },
     next: { emoji: "▶️", style: 1 },
-    last: { emoji: "⏩", style: 2 },
-    jump: "auto",
-    jumpPlaceholder: "Jump to page ({page}/{pages})",
+    last: { emoji: "⏩", style: 1 },
+    wrap: true,
+    jump: true,
+    jumpWindow: 20,
+    jumpPlaceholder: "🔄 Jump to a page ({page} / {pages})",
     jumpOption: "Page {page}",
-    indicator: "-# Page {page} of {pages}"
+    indicator: false
   }
 }
 

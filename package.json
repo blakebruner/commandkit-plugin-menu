@@ -1,6 +1,6 @@
 {
   "name": "commandkit-plugin-menu",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Live, persistent Components V2 menus for CommandKit: pagination, static panels, push updates and restart-safe buttons.",
   "keywords": [
     "commandkit",

@@ -163,3 +163,22 @@ export function findCustomId(components: any, action: string): string {
 }
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+/** The page-jump select in a rendered tree. */
+function jumpSelect(components: any): any {
+  let found: any
+  walkComponents(components, c => {
+    if (c.type === 3 && String(c.custom_id).endsWith(":$jump")) found = c
+  })
+  return found
+}
+
+/** The jump select's placeholder, e.g. "🔄 Jump to a page (2 / 3)". */
+export function jumpPlaceholder(components: any): string | undefined {
+  return jumpSelect(components)?.placeholder
+}
+
+/** The jump select's option labels. */
+export function jumpOptions(components: any): string[] {
+  return (jumpSelect(components)?.options ?? []).map((o: any) => o.label)
+}

@@ -109,10 +109,11 @@ export function definePaginatedMenu<
       ctx.setState({ page: Math.min(Math.max(0, page), pageCount - 1) } as Partial<S>)
     }
 
+  const wraps = () => ({ ...getMenuEngine().options.navigation, ...config.navigation }).wrap
   const builtins: Record<string, ActionHandler<Params, S, Data>> = {
     [NAV.first]: goTo(() => 0),
-    [NAV.previous]: goTo(page => page - 1),
-    [NAV.next]: goTo(page => page + 1),
+    [NAV.previous]: goTo((page, pageCount) => (page <= 0 && wraps() ? pageCount - 1 : page - 1)),
+    [NAV.next]: goTo((page, pageCount) => (page >= pageCount - 1 && wraps() ? 0 : page + 1)),
     [NAV.last]: goTo((_, pageCount) => pageCount - 1),
     [NAV.jump]: goTo((page, _, ctx) => {
       const value = Number(ctx.values[0])
@@ -210,8 +211,9 @@ function navigation(
   if (nav.indicator) {
     out.push({ type: ComponentType.TextDisplay, content: fill(nav.indicator, values) })
   }
-  const atStart = page <= 0
-  const atEnd = page >= pageCount - 1
+  // With wrap on, previous/next go around, so nothing is ever disabled.
+  const atStart = !nav.wrap && page <= 0
+  const atEnd = !nav.wrap && page >= pageCount - 1
   const buttons: Record<string, any>[] = []
   if (nav.first) buttons.push(button(nav.first, ctx.id(NAV.first), atStart))
   buttons.push(button(nav.previous, ctx.id(NAV.previous), atStart))
@@ -221,15 +223,17 @@ function navigation(
 
   const showJump = nav.jump === "auto" ? pageCount > 3 : nav.jump
   if (showJump) {
-    let start = Math.max(0, page - Math.floor(MAX_SELECT_OPTIONS / 2))
-    const end = Math.min(pageCount, start + MAX_SELECT_OPTIONS)
-    start = Math.max(0, end - MAX_SELECT_OPTIONS)
+    // A window of nearby pages, centred on the current one.
+    const size = Math.min(MAX_SELECT_OPTIONS, Math.max(1, Math.floor(nav.jumpWindow)))
+    let start = Math.max(0, page - Math.floor(size / 2))
+    const end = Math.min(pageCount, start + size)
+    start = Math.max(0, end - size)
     const options = []
     for (let i = start; i < end; i++) {
+      // No default option, so the placeholder (with the page count) stays visible.
       options.push({
         label: fill(nav.jumpOption, { page: i + 1, pages: pageCount, total }),
-        value: String(i),
-        default: i === page
+        value: String(i)
       })
     }
     out.push({

@@ -7,7 +7,16 @@ import { definePaginatedMenu } from "../src/pagination"
 import { MemoryMenuStorage } from "../src/storage/memory"
 import { SqliteMenuStorage } from "../src/storage/sqlite"
 import type { MenuStorage } from "../src/storage/types"
-import { createEngine, customIds, fakeInteraction, findCustomId, sleep, texts } from "./helpers"
+import {
+  createEngine,
+  customIds,
+  fakeInteraction,
+  findCustomId,
+  jumpOptions,
+  jumpPlaceholder,
+  sleep,
+  texts
+} from "./helpers"
 
 const text = (content: string) => ({ type: ComponentType.TextDisplay, content })
 const button = (customId: string, label = "x") => ({
@@ -750,8 +759,12 @@ describe("typed helpers on definitions", () => {
 describe("pagination", () => {
   const tracks = Array.from({ length: 12 }, (_, i) => ({ id: `t${i + 1}`, title: `Song ${i + 1}` }))
 
-  function queueMenu(source: { list: typeof tracks }) {
+  function queueMenu(
+    source: { list: typeof tracks },
+    navigation?: Parameters<typeof definePaginatedMenu>[0]["navigation"]
+  ) {
     return definePaginatedMenu({
+      navigation,
       name: `queue-${Math.random().toString(36).slice(2, 8)}`,
       key: (p: { guildId: string }) => p.guildId,
       load: () => ({ playing: "Intro", upcoming: source.list }),
@@ -787,14 +800,16 @@ describe("pagination", () => {
       "2. Song 2",
       "3. Song 3",
       "4. Song 4",
-      "5. Song 5",
-      "-# Page 1 of 3"
+      "5. Song 5"
     ])
     const ids = customIds(container)
-    expect(ids.filter(id => id.includes(":$"))).toHaveLength(4) // first/prev/next/last, no jump at 3 pages
+    expect(ids.filter(id => id.includes(":$"))).toHaveLength(5) // first/prev/next/last + jump
+    expect(jumpPlaceholder(container)).toBe("🔄 Jump to a page (1 / 3)")
+    // Wrapping navigation: nothing is disabled on the first page.
+    expect(JSON.stringify(container)).not.toContain('"disabled":true')
   })
 
-  it("moves between pages per view and clamps at the ends", async () => {
+  it("moves between pages per view and wraps around at the ends", async () => {
     const { engine } = createEngine()
     const menu = queueMenu({ list: tracks })
     const opener = fakeInteraction()
@@ -806,13 +821,24 @@ describe("pagination", () => {
         values
       })
       await engine.handleInteraction(i)
-      return texts(i.calls[0].payload.components)
+      return jumpPlaceholder(i.calls[0].payload.components)
     }
-    expect((await click("$next")).at(-1)).toBe("-# Page 2 of 3")
-    expect((await click("$last")).at(-1)).toBe("-# Page 3 of 3")
-    expect((await click("$next")).at(-1)).toBe("-# Page 3 of 3")
-    expect((await click("$first")).at(-1)).toBe("-# Page 1 of 3")
-    expect((await click("$prev")).at(-1)).toBe("-# Page 1 of 3")
+    expect(await click("$next")).toBe("🔄 Jump to a page (2 / 3)")
+    expect(await click("$last")).toBe("🔄 Jump to a page (3 / 3)")
+    expect(await click("$next")).toBe("🔄 Jump to a page (1 / 3)")
+    expect(await click("$prev")).toBe("🔄 Jump to a page (3 / 3)")
+    expect(await click("$first")).toBe("🔄 Jump to a page (1 / 3)")
+  })
+
+  it("clamps at the ends when wrap is off", async () => {
+    const { engine } = createEngine()
+    const menu = queueMenu({ list: tracks }, { wrap: false })
+    const opener = fakeInteraction()
+    const ref = await engine.reply(opener, menu, { guildId: "g" })
+    expect(JSON.stringify(opener.calls[0].payload.components)).toContain('"disabled":true')
+    const prev = fakeInteraction({ kind: "button", customId: `menu:${ref.id}:$prev` })
+    await engine.handleInteraction(prev)
+    expect(jumpPlaceholder(prev.calls[0].payload.components)).toBe("🔄 Jump to a page (1 / 3)")
   })
 
   it("shows a jump select when there are many pages", async () => {
@@ -828,7 +854,25 @@ describe("pagination", () => {
       values: ["6"]
     })
     await engine.handleInteraction(jump)
-    expect(texts(jump.calls[0].payload.components).at(-1)).toBe("-# Page 7 of 8")
+    expect(jumpPlaceholder(jump.calls[0].payload.components)).toBe("🔄 Jump to a page (7 / 8)")
+  })
+
+  it("lists a window of nearby pages in the jump select", async () => {
+    const { engine } = createEngine()
+    const many = Array.from({ length: 200 }, (_, i) => ({ id: `t${i}`, title: `S${i}` }))
+    const menu = queueMenu({ list: many })
+    const opener = fakeInteraction()
+    const ref = await engine.reply(opener, menu, { guildId: "g" })
+    const jump = fakeInteraction({
+      kind: "select",
+      customId: `menu:${ref.id}:$jump`,
+      values: ["24"]
+    })
+    await engine.handleInteraction(jump)
+    const labels = jumpOptions(jump.calls[0].payload.components)
+    expect(labels).toHaveLength(20)
+    expect(labels[0]).toBe("Page 15")
+    expect(labels.at(-1)).toBe("Page 34")
   })
 
   it("item actions get the item id, and pages clamp when the list shrinks", async () => {
@@ -845,7 +889,7 @@ describe("pagination", () => {
     await engine.handleInteraction(remove)
     const after = texts(remove.calls[0].payload.components)
     expect(after).toContain("5. Song 5") // back on page 1, which is now the only page
-    expect(after.some(t => t.startsWith("-# Page"))).toBe(false)
+    expect(customIds(remove.calls[0].payload.components).some(id => id.includes(":$"))).toBe(false)
   })
 
   it("renders the empty state", async () => {

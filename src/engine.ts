@@ -144,6 +144,8 @@ export class MenuEngine {
   readonly menus = new Map<string, AnyMenu>()
 
   private locks = new Map<string, Promise<void>>()
+  /** Views whose lock is held by a click right now (see `eachView`). */
+  private acting = new Set<string>()
   private dirty = new Map<string, DirtyEntry>()
   /** Logical clock value when each view last started a render that reached Discord. */
   private renderedAt = new Map<string, number>()
@@ -382,9 +384,7 @@ export class MenuEngine {
         return (this.renderedAt.get(view.id) ?? -1) < entry.since
       })
       const dataCache: DataCache = new Map()
-      await mapLimit(targets, this.options.concurrency, view =>
-        this.push(view.id, entry.since, dataCache)
-      )
+      await this.eachView(targets, view => this.push(view.id, entry.since, dataCache))
     } catch (error) {
       log.error(`Menu push for "${entry.menu}" failed: ${stack(error)}`)
     } finally {
@@ -475,7 +475,7 @@ export class MenuEngine {
       params === undefined
         ? await this.storage.findByMenu(menu.name)
         : await this.storage.findByKey(menu.name, menu.runtime.key(params))
-    await mapLimit(views, this.options.concurrency, view => this.closeView(view.id, mode))
+    await this.eachView(views, view => this.closeView(view.id, mode))
     return views.length
   }
 
@@ -523,13 +523,33 @@ export class MenuEngine {
       if (policy === "owner") return other.ownerId !== null && other.ownerId === view.ownerId
       return other.channelId !== null && other.channelId === view.channelId
     })
-    await Promise.all(
-      others.map(other =>
-        this.closeView(other.id, "delete").catch(error =>
-          log.warn(`Could not replace older view ${other.id}: ${stack(error)}`)
-        )
+    await this.eachView(others, other =>
+      this.closeView(other.id, "delete").catch(error =>
+        log.warn(`Could not replace older view ${other.id}: ${stack(error)}`)
       )
     )
+  }
+
+  /**
+   * Run `fn` for each view, a few at a time. A view whose click is still running is handled once that
+   * click finishes, without waiting for it here: an action that awaits `invalidate()` or `close()` for
+   * its own menu would otherwise wait on itself forever.
+   */
+  private async eachView(
+    views: ViewRecord[],
+    fn: (view: ViewRecord) => Promise<void>
+  ): Promise<void> {
+    const idle: ViewRecord[] = []
+    for (const view of views) {
+      if (!this.acting.has(view.id)) {
+        idle.push(view)
+        continue
+      }
+      void fn(view).catch(error =>
+        log.warn(`Menu update for view ${view.id} failed: ${stack(error)}`)
+      )
+    }
+    await mapLimit(idle, this.options.concurrency, fn)
   }
 
   // ---------------------------------------------------------------- housekeeping
@@ -595,9 +615,20 @@ export class MenuEngine {
 
     const responder = new Responder(interaction, this.options.deferAfter)
     try {
-      const after = await this.withLock(parsed.viewId, () =>
-        this.runInteraction(interaction, parsed.viewId, parsed.action, parsed.arg, responder)
-      )
+      const after = await this.withLock(parsed.viewId, async () => {
+        this.acting.add(parsed.viewId)
+        try {
+          return await this.runInteraction(
+            interaction,
+            parsed.viewId,
+            parsed.action,
+            parsed.arg,
+            responder
+          )
+        } finally {
+          this.acting.delete(parsed.viewId)
+        }
+      })
       // Outside the lock: opening a menu may replace (and so lock) the view that was clicked.
       await after?.()
     } catch (error) {

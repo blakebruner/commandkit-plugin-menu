@@ -1005,4 +1005,67 @@ describe("regressions", () => {
     await engine.invalidate(panel, { ticketId: "t1" })
     expect(await engine.storage.get(ref.id)).not.toBeNull()
   })
+  it("an action can await invalidate() for its own menu without hanging", async () => {
+    const { engine, transport } = createEngine()
+    const db = createTicketDb()
+    const panel = defineMenu({
+      name: "await-invalidate",
+      key: (p: { ticketId: string }) => p.ticketId,
+      load: p => db.get(p.ticketId)!,
+      render: ({ data, id }) => [
+        text(`claimed: ${data.claimedBy ?? "nobody"}`),
+        button(id("claim"))
+      ],
+      actions: {
+        claim: async ctx => {
+          db.get(ctx.params.ticketId)!.claimedBy = ctx.user.id
+          await engine.invalidate(panel, ctx.params)
+        }
+      }
+    })
+    const clicked = await engine.reply(fakeInteraction(), panel, { ticketId: "t1" })
+    await engine.send("c2", panel, { ticketId: "t1" })
+    const click = fakeInteraction({
+      kind: "button",
+      userId: "staff",
+      customId: `menu:${clicked.id}:claim`
+    })
+    const result = await Promise.race([
+      engine.handleInteraction(click).then(() => "done"),
+      sleep(1000).then(() => "hung")
+    ])
+    expect(result).toBe("done")
+    expect(texts(click.calls[0].payload.components)).toContain("claimed: staff")
+    await sleep(30)
+    // the other view got the push; the clicked one was already fresh from the click
+    expect(transport.edits).toHaveLength(1)
+    expect(texts(transport.edits[0]!.menu.components)).toContain("claimed: staff")
+
+    // and the clicked view still takes clicks afterwards
+    const again = fakeInteraction({ kind: "button", customId: `menu:${clicked.id}:claim` })
+    const second = await Promise.race([
+      engine.handleInteraction(again).then(() => "done"),
+      sleep(1000).then(() => "hung")
+    ])
+    expect(second).toBe("done")
+  })
+
+  it("an action can await close() for its own menu; the view closes after the click", async () => {
+    const { engine } = createEngine()
+    const panel = defineMenu({
+      name: "await-close",
+      key: (p: { t: string }) => p.t,
+      render: ({ id }) => button(id("done")),
+      actions: { done: async ctx => void (await engine.close(panel, ctx.params)) }
+    })
+    const ref = await engine.reply(fakeInteraction(), panel, { t: "1" })
+    const click = fakeInteraction({ kind: "button", customId: `menu:${ref.id}:done` })
+    const result = await Promise.race([
+      engine.handleInteraction(click).then(() => "done"),
+      sleep(1000).then(() => "hung")
+    ])
+    expect(result).toBe("done")
+    await sleep(30)
+    expect(await engine.views(panel)).toHaveLength(0)
+  })
 })
